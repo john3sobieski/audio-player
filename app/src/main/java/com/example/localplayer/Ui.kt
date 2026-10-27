@@ -97,7 +97,7 @@ fun App(vm: PlayerViewModel) {
     BackHandler(enabled = screen != null) { vm.pop() }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) vm.setFolder(uri)
+        if (uri != null) vm.selectFolder(uri)
     }
 
     Scaffold(

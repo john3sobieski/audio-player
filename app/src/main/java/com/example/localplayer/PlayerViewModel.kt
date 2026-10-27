@@ -128,7 +128,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Папка ----------
 
-    fun setFolder(uri: Uri) {
+    fun selectFolder(uri: Uri) {
         val cr = getApplication<Application>().contentResolver
         runCatching { cr.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         folder?.takeIf { it != uri }?.let { old ->
