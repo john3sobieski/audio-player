@@ -18,11 +18,16 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 sealed interface Screen {
     data object Settings : Screen
+    data object Equalizer : Screen
     data object Player : Screen
     data class AlbumScreen(val key: String) : Screen
     data class PlaylistScreen(val id: String) : Screen
@@ -56,6 +61,24 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             .sortedBy { it.name.lowercase() }
+    }
+
+    // ---------- Настройки звука ----------
+    var monoEnabled by mutableStateOf(false)
+        private set
+    var normalizeEnabled by mutableStateOf(false)
+        private set
+
+    fun changeMono(value: Boolean) {
+        monoEnabled = value
+        AudioFx.mono = value
+        AudioFx.save(getApplication())
+    }
+
+    fun changeNormalize(value: Boolean) {
+        normalizeEnabled = value
+        AudioFx.normalize = value
+        AudioFx.save(getApplication())
     }
 
     // ---------- Навигация ----------
@@ -94,7 +117,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         override fun onRepeatModeChanged(repeatMode: Int) { repeat = repeatMode }
     }
 
+    private var scanJob: Job? = null
+    private var scanId = 0
+
     init {
+        AudioFx.load(app)
+        monoEnabled = AudioFx.mono
+        normalizeEnabled = AudioFx.normalize
+
         playlists = library.loadPlaylists()
         connectPlayer()
 
@@ -102,7 +132,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val cr = app.contentResolver
         if (saved != null && cr.persistedUriPermissions.any { it.uri == saved && it.isReadPermission }) {
             folder = saved
-            rescan()
+            // Сразу показываем результат прошлого сканирования; актуальный скан запускает MainActivity.onStart()
+            viewModelScope.launch {
+                val cached = withContext(Dispatchers.IO) { library.cachedTracks() }
+                if (tracks.isEmpty()) tracks = cached
+            }
         } else if (saved != null) {
             library.saveFolder(null) // доступ потерян — просим выбрать заново
         }
@@ -126,7 +160,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }, ContextCompat.getMainExecutor(app))
     }
 
-    // ---------- Папка ----------
+    // ---------- Папка и сканирование ----------
 
     fun selectFolder(uri: Uri) {
         val cr = getApplication<Application>().contentResolver
@@ -139,16 +173,30 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         library.saveFolder(uri)
         folder = uri
         tracks = emptyList()
-        rescan()
+        rescan(force = true)
+    }
+
+    /** Вызывается при каждом входе в приложение: подхватывает добавленные и удалённые файлы. */
+    fun refresh() {
+        if (folder != null) rescan()
     }
 
     fun rescan(force: Boolean = false) {
         val f = folder ?: return
         if (force) library.clearCache()
-        viewModelScope.launch {
+        scanJob?.cancel()
+        val id = ++scanId
+        scanJob = viewModelScope.launch {
             scanning = true
-            tracks = try { library.scan(f) } catch (_: Exception) { emptyList() }
-            scanning = false
+            try {
+                tracks = library.scan(f)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // оставляем прежний список
+            } finally {
+                if (id == scanId) scanning = false
+            }
         }
     }
 

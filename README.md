@@ -14,7 +14,12 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 - **Background playback** with a media notification, lock screen controls, and headset button support.
 - **Player controls:** play/pause, next/previous, seek, shuffle, repeat (off / all / one).
 - **Cover art** read from embedded tags.
-- **Fast rescans:** track metadata is cached, so reopening the app or rescanning a large folder is quick.
+- **Always up to date:** the folder is rescanned every time you open the app (or return to it), so added and deleted files show up automatically. Track metadata is cached, so rescans are fast.
+- **Sound settings:**
+  - **Mono / stereo** switch
+  - **Volume normalization** that evens out loudness between tracks (a slow automatic gain control with a soft limiter, applied in real time)
+  - **Equalizer** (placeholder, coming soon)
+- **Smooth animations** for screen transitions, tab switching, the full-screen player, and list changes.
 - Supported formats: MP3, FLAC, OGG/Opus, M4A/AAC, WAV, and other formats supported by Android.
 - Material 3 design with dynamic colors on Android 12+ and light/dark theme support.
 
@@ -71,10 +76,11 @@ This repository includes a workflow in `.github/workflows/build.yml`.
 ```
 app/src/main/java/com/example/localplayer/
 ├── MainActivity.kt        # Entry point, theme, notification permission
-├── Ui.kt                  # All screens (Compose)
+├── Ui.kt                  # All screens and animations (Compose)
 ├── PlayerViewModel.kt     # App state, playlists, player control
 ├── Library.kt             # Folder scanning, metadata cache, playlist storage
 ├── PlaybackService.kt     # Background playback (Media3 MediaSessionService)
+├── AudioFx.kt             # Real-time audio processor: mono mix and volume normalization
 └── Models.kt              # Track / Album / Playlist data classes
 ```
 

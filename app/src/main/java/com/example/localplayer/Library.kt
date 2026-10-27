@@ -157,6 +157,9 @@ class Library(private val ctx: Context) {
         cacheFile.delete()
     }
 
+    /** Треки из прошлого сканирования: показываем их мгновенно, пока идёт актуальный скан. */
+    fun cachedTracks(): List<Track> = loadCache().values.sortedBy { it.title.lowercase() }
+
     // ---------- Плейлисты ----------
 
     fun loadPlaylists(): List<Playlist> = try {
