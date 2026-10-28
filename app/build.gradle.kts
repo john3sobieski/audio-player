@@ -16,9 +16,27 @@ android {
         versionName = "1.0"
     }
 
+    // Постоянный ключ подписи: новые сборки устанавливаются поверх старых без удаления приложения
+    // (плейлисты при этом сохраняются). Ключ лежит в репозитории: это личный проект, не для магазина приложений.
+    signingConfigs {
+        create("shared") {
+            storeFile = file("localplayer.jks")
+            storePassword = "localplayer"
+            keyAlias = "localplayer"
+            keyPassword = "localplayer"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
-            isMinifyEnabled = false
+            // R8: сжатие и оптимизация кода. Compose в release работает заметно плавнее, чем в debug.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 

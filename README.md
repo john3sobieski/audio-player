@@ -29,7 +29,7 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 
 ## Download and install
 
-Build the APK yourself using one of the methods below, then copy `app-debug.apk` to your phone, open it, and allow installation from unknown sources when prompted.
+Build the APK yourself using one of the methods below, then copy `app-release.apk` to your phone, open it, and allow installation from unknown sources when prompted.
 
 ## Building from source
 
@@ -38,20 +38,21 @@ Build the APK yourself using one of the methods below, then copy `app-debug.apk`
 1. Install [Android Studio](https://developer.android.com/studio). It bundles the JDK and the Android SDK.
 2. Clone this repository and open the project folder (**File → Open**).
 3. Wait for the Gradle sync to finish (the first sync downloads dependencies and can take several minutes).
-4. Choose **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
-5. The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
+4. Open **Build → Select Build Variant** and switch `app` to **release**. This matters: debug builds are noticeably slower and animations will look choppy.
+5. Choose **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+6. The APK will be at `app/build/outputs/apk/release/app-release.apk`.
 
-You can also run the app directly on a connected device or an emulator with the **Run** button.
+You can also run the app directly on a connected device or an emulator with the **Run** button (with the **release** variant selected for real-world performance).
 
 ### Option 2: Command line
 
 You need JDK 17 and the Android SDK (set `ANDROID_HOME`), plus Gradle 8.9 or newer:
 
 ```bash
-gradle assembleDebug
+gradle assembleRelease
 ```
 
-The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
+The APK will be at `app/build/outputs/apk/release/app-release.apk`.
 
 ### Option 3: GitHub Actions (no local setup)
 
@@ -59,9 +60,9 @@ This repository includes a workflow in `.github/workflows/build.yml`.
 
 1. Fork this repository or push it to your own GitHub account.
 2. Open the **Actions** tab, select **Build APK**, and click **Run workflow** (it also runs on every push to `main`/`master`).
-3. When the run finishes, download the **LocalPlayer-debug-apk** artifact. It contains `app-debug.apk`.
+3. When the run finishes, download the **LocalPlayer-release-apk** artifact. It contains `app-release.apk`.
 
-> The debug APK is signed with the default Android debug key. That is fine for personal use. To distribute a release build, configure your own signing key.
+> **Signing.** Builds are signed with the keystore committed in `app/localplayer.jks`, so new versions install over old ones without uninstalling (your playlists are kept). This key is public, so it is only suitable for personal use. If you want to distribute the app, generate your own keystore, keep it private, and update the `signingConfigs` block in `app/build.gradle.kts`.
 
 ## How to use
 
