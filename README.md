@@ -25,6 +25,9 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
     - *Per track*: every track remembers its own curve permanently (stored on the device); in this mode the curves can be edited only in the player, and the Settings sliders are locked
     - The mode is chosen in Settings only; the player's equalizer screen has no mode switch and explains which mode is active
   - Bass, treble, subsonic filter and the equalizer are independent and can be used together. Switching equalizer modes never erases saved curves.
+- **Playback speed** from −3x (3 times slower) to 3x (3 times faster) in 0.1 steps (the **Speed** button in the player's sound row, also in Settings). Pitch is preserved; the current speed is shown on the button while it is on.
+- **Sorting** in Playlists, Albums and Tracks: a thin bar under the title with the sort type on the left (by name, artist, album, duration, file date, creation/change date, number of tracks, or *Manual*) and ascending/descending on the right. The choice is remembered per section.
+- **Reordering by long press:** hold a playlist, album or track and drag it up or down (the list scrolls near the edges). The list then switches to *Manual* sorting and the order is saved. Tracks inside a playlist can be reordered the same way.
 - **Smooth animations** for screen transitions, tab switching, the full-screen player, and list changes.
 - Supported formats: MP3, FLAC, OGG/Opus, M4A/AAC, WAV, and other formats supported by Android.
 - Material 3 design with dynamic colors on Android 12+ and light/dark theme support.
@@ -84,6 +87,7 @@ This repository includes a workflow in `.github/workflows/build.yml`.
 app/src/main/java/com/example/localplayer/
 ├── MainActivity.kt        # Entry point, theme, notification permission
 ├── Ui.kt                  # All screens and animations (Compose)
+├── ListTools.kt           # Long-press drag reordering and the sort bar
 ├── PlayerViewModel.kt     # App state, playlists, player control
 ├── Library.kt             # Folder scanning, metadata cache, playlist storage
 ├── PlaybackService.kt     # Background playback (Media3 MediaSessionService)

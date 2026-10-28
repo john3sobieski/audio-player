@@ -37,7 +37,7 @@ class Library(private val ctx: Context) {
 
     // ---------- Сканирование ----------
 
-    private class Entry(val uri: Uri, val name: String, val stamp: String, val size: Long)
+    private class Entry(val uri: Uri, val name: String, val stamp: String, val size: Long, val modified: Long)
 
     suspend fun scan(tree: Uri): List<Track> = withContext(Dispatchers.IO) {
         val files = ArrayList<Entry>()
@@ -51,7 +51,7 @@ class Library(private val ctx: Context) {
                 async {
                     val key = "${e.uri}|${e.stamp}"
                     val cached = cache[key]
-                    if (cached != null) key to cached
+                    if (cached != null) key to cached.copy(modified = e.modified)
                     else key to gate.withPermit { readTrack(e) }
                 }
             }.awaitAll()
@@ -84,6 +84,7 @@ class Library(private val ctx: Context) {
                             name,
                             "${c.getLong(3)}|${c.getLong(4)}",
                             c.getLong(4),
+                            c.getLong(3),
                         )
                     }
                 }
@@ -113,12 +114,14 @@ class Library(private val ctx: Context) {
                 trackNo = m(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
                     ?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0,
                 info = info,
+                modified = e.modified,
             )
         } catch (_: Exception) {
             Track(
                 e.uri.toString(), fallbackTitle, NO_ARTIST, NO_ARTIST, NO_ALBUM, 0L, 0,
                 info = runCatching { AudioProbe.probe(ctx, e.uri, e.name, e.size, 0L, null) }
                     .getOrDefault(AudioInfo()),
+                modified = e.modified,
             )
         } finally {
             runCatching { r.release() }
@@ -143,6 +146,7 @@ class Library(private val ctx: Context) {
                             o.getString("fmt"), o.getInt("kbps"), o.getInt("hz"),
                             o.getInt("bits"), o.getBoolean("ll"),
                         ),
+                        o.optLong("mod", 0L),
                     ),
                 )
             }
@@ -161,7 +165,8 @@ class Library(private val ctx: Context) {
                         .put("albumArtist", t.albumArtist).put("album", t.album)
                         .put("dur", t.durationMs).put("no", t.trackNo)
                         .put("fmt", t.info.format).put("kbps", t.info.bitrateKbps).put("hz", t.info.sampleRateHz)
-                        .put("bits", t.info.bitsPerSample).put("ll", t.info.lossless),
+                        .put("bits", t.info.bitsPerSample).put("ll", t.info.lossless)
+                        .put("mod", t.modified),
                 )
             }
             cacheFile.writeText(arr.toString())
@@ -183,7 +188,10 @@ class Library(private val ctx: Context) {
         List(arr.length()) { i ->
             val o = arr.getJSONObject(i)
             val uris = o.getJSONArray("tracks")
-            Playlist(o.getString("id"), o.getString("name"), List(uris.length()) { uris.getString(it) })
+            Playlist(
+                o.getString("id"), o.getString("name"), List(uris.length()) { uris.getString(it) },
+                o.optLong("created", 0L), o.optLong("updated", 0L),
+            )
         }
     } catch (_: Exception) {
         emptyList()
@@ -195,10 +203,39 @@ class Library(private val ctx: Context) {
             for (p in list) {
                 arr.put(
                     JSONObject().put("id", p.id).put("name", p.name)
-                        .put("tracks", JSONArray(p.trackUris)),
+                        .put("tracks", JSONArray(p.trackUris))
+                        .put("created", p.createdAt).put("updated", p.updatedAt),
                 )
             }
             playlistsFile.writeText(arr.toString())
+        } catch (_: Exception) {
+        }
+    }
+
+    // ---------- Сортировка и ручной порядок ----------
+
+    fun loadSort(tab: String, default: SortState, allowed: List<SortKey>): SortState {
+        val raw = prefs.getString("sort_$tab", null) ?: return default
+        val key = runCatching { SortKey.valueOf(raw.substringBefore(':')) }.getOrNull()
+        if (key == null || key !in allowed) return default
+        return SortState(key, raw.substringAfter(':', "0") == "1")
+    }
+
+    fun saveSort(tab: String, s: SortState) {
+        prefs.edit().putString("sort_$tab", "${s.key.name}:${if (s.descending) 1 else 0}").apply()
+    }
+
+    /** Порядок, заданный перетаскиванием (идентификаторы треков, альбомов или плейлистов). */
+    fun loadOrder(name: String): List<String> = try {
+        val arr = JSONArray(File(ctx.filesDir, "order_$name.json").readText())
+        List(arr.length()) { arr.getString(it) }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    fun saveOrder(name: String, order: List<String>) {
+        try {
+            File(ctx.filesDir, "order_$name.json").writeText(JSONArray(order).toString())
         } catch (_: Exception) {
         }
     }

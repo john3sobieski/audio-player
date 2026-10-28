@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -104,6 +105,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -133,6 +136,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -386,77 +390,139 @@ private fun EmptyHint(text: String) {
     }
 }
 
+/** Переставляет элемент [from] на место элемента [to] (по ключам); используется во время перетаскивания. */
+private fun <T> MutableList<T>.moveByKey(from: Any, to: Any, key: (T) -> Any) {
+    val a = indexOfFirst { key(it) == from }
+    val b = indexOfFirst { key(it) == to }
+    if (a < 0 || b < 0 || a == b) return
+    add(b, removeAt(a))
+}
+
 @Composable
 private fun TracksTab(vm: PlayerViewModel) {
-    val list = vm.tracks
-    if (list.isEmpty()) {
+    if (vm.tracks.isEmpty()) {
         EmptyHint(if (vm.scanning) "Сканирую папку…" else "В выбранной папке нет аудиофайлов")
         return
     }
-    LazyColumn(Modifier.fillMaxSize()) {
-        itemsIndexed(list, key = { _, t -> t.uri }) { i, t ->
-            TrackRow(
-                track = t,
-                current = vm.currentId == t.uri,
-                onClick = { vm.play(list, i) },
-                menu = listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }),
-                modifier = Modifier.animateItem(),
-            )
+    val sorted = vm.sortedTracks
+    val working = remember { mutableStateListOf<Track>() }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val reorder = rememberReorderState(
+        listState,
+        ReorderCallbacks(
+            canDrag = { it is String },
+            onStart = { working.clear(); working.addAll(sorted) },
+            onMove = { from, to -> working.moveByKey(from, to) { it.uri } },
+            onEnd = { vm.commitTrackOrder(working.map { it.uri }) },
+        ),
+    )
+    val list: List<Track> = if (reorder.isDragging) working else sorted
+
+    Column(Modifier.fillMaxSize()) {
+        SortBar(vm.trackSort, TRACK_SORT_KEYS, { vm.changeTrackSort(it); scope.launch { listState.scrollToItem(0) } })
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            itemsIndexed(list, key = { _, t -> t.uri }) { i, t ->
+                TrackRow(
+                    track = t,
+                    current = vm.currentId == t.uri,
+                    onClick = { vm.play(list, i) },
+                    menu = listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }),
+                    modifier = reorderableItem(reorder, t.uri),
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun AlbumsTab(vm: PlayerViewModel) {
-    val list = vm.albums
-    if (list.isEmpty()) {
+    if (vm.albums.isEmpty()) {
         EmptyHint(if (vm.scanning) "Сканирую папку…" else "Альбомов пока нет")
         return
     }
-    LazyColumn(Modifier.fillMaxSize()) {
-        itemsIndexed(list, key = { _, a -> a.key }) { _, a ->
-            ListItem(
-                modifier = Modifier.animateItem().clickable { vm.push(Screen.AlbumScreen(a.key)) },
-                leadingContent = { Cover(a.tracks.firstOrNull()?.uri, 56.dp) },
-                headlineContent = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                supportingContent = {
-                    Text("${a.artist} · ${a.tracks.size} ${plural(a.tracks.size)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                },
-            )
+    val sorted = vm.sortedAlbums
+    val working = remember { mutableStateListOf<Album>() }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val reorder = rememberReorderState(
+        listState,
+        ReorderCallbacks(
+            canDrag = { it is String },
+            onStart = { working.clear(); working.addAll(sorted) },
+            onMove = { from, to -> working.moveByKey(from, to) { it.key } },
+            onEnd = { vm.commitAlbumOrder(working.map { it.key }) },
+        ),
+    )
+    val list: List<Album> = if (reorder.isDragging) working else sorted
+
+    Column(Modifier.fillMaxSize()) {
+        SortBar(vm.albumSort, ALBUM_SORT_KEYS, { vm.changeAlbumSort(it); scope.launch { listState.scrollToItem(0) } })
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            itemsIndexed(list, key = { _, a -> a.key }) { _, a ->
+                ListItem(
+                    modifier = reorderableItem(reorder, a.key).clickable { vm.push(Screen.AlbumScreen(a.key)) },
+                    leadingContent = { Cover(a.tracks.firstOrNull()?.uri, 56.dp) },
+                    headlineContent = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = {
+                        Text("${a.artist} · ${a.tracks.size} ${plural(a.tracks.size)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun PlaylistsTab(vm: PlayerViewModel) {
-    LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            ListItem(
-                modifier = Modifier.clickable { vm.newPlaylistFirstTrack = null; vm.newPlaylistDialog = true },
-                leadingContent = { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary) },
-                headlineContent = { Text("Новый плейлист", color = MaterialTheme.colorScheme.primary) },
-            )
-            HorizontalDivider()
+    val sorted = vm.sortedPlaylists
+    val working = remember { mutableStateListOf<Playlist>() }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val reorder = rememberReorderState(
+        listState,
+        ReorderCallbacks(
+            canDrag = { it is String },
+            onStart = { working.clear(); working.addAll(sorted) },
+            onMove = { from, to -> working.moveByKey(from, to) { it.id } },
+            onEnd = { vm.commitPlaylistOrder(working.map { it.id }) },
+        ),
+    )
+    val list: List<Playlist> = if (reorder.isDragging) working else sorted
+
+    Column(Modifier.fillMaxSize()) {
+        if (vm.playlists.isNotEmpty()) {
+            SortBar(vm.playlistSort, PLAYLIST_SORT_KEYS, { vm.changePlaylistSort(it); scope.launch { listState.scrollToItem(0) } })
         }
-        if (vm.playlists.isEmpty()) {
-            item { Text("Плейлистов пока нет", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        itemsIndexed(vm.playlists, key = { _, p -> p.id }) { _, p ->
-            val n = vm.playlistTracks(p).size
-            ListItem(
-                modifier = Modifier.animateItem().clickable { vm.push(Screen.PlaylistScreen(p.id)) },
-                leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) },
-                headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                supportingContent = { Text("$n ${plural(n)}") },
-                trailingContent = {
-                    RowMenu(
-                        listOf(
-                            "Переименовать" to { vm.renameTarget = p },
-                            "Удалить" to { vm.deletePlaylist(p.id) },
-                        ),
-                    )
-                },
-            )
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            item {
+                ListItem(
+                    modifier = Modifier.clickable { vm.newPlaylistFirstTrack = null; vm.newPlaylistDialog = true },
+                    leadingContent = { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text("Новый плейлист", color = MaterialTheme.colorScheme.primary) },
+                )
+                HorizontalDivider()
+            }
+            if (vm.playlists.isEmpty()) {
+                item { Text("Плейлистов пока нет", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            itemsIndexed(list, key = { _, p -> p.id }) { _, p ->
+                val n = vm.playlistTracks(p).size
+                ListItem(
+                    modifier = reorderableItem(reorder, p.id).clickable { vm.push(Screen.PlaylistScreen(p.id)) },
+                    leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) },
+                    headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = { Text("$n ${plural(n)}") },
+                    trailingContent = {
+                        RowMenu(
+                            listOf(
+                                "Переименовать" to { vm.renameTarget = p },
+                                "Удалить" to { vm.deletePlaylist(p.id) },
+                            ),
+                        )
+                    },
+                )
+            }
         }
     }
 }
@@ -482,13 +548,14 @@ private fun AlbumScreen(vm: PlayerViewModel, key: String) {
 private fun PlaylistScreen(vm: PlayerViewModel, id: String) {
     val pl = vm.playlists.find { it.id == id }
     if (pl == null) { EmptyHint("Плейлист не найден"); return }
-    val list = vm.playlistTracks(pl)
+    val list = vm.playlistTracks(pl).distinctBy { it.uri }
     TrackListScreen(
         vm = vm,
         header = "${list.size} ${plural(list.size)}",
         list = list,
         emptyText = "Плейлист пуст. Добавляйте треки через меню «⋮» на вкладках «Треки» и «Альбомы».",
         menuFor = { t -> listOf("Убрать из плейлиста" to { vm.removeFromPlaylist(pl.id, t) }) },
+        onReorder = { uris -> vm.reorderPlaylistTracks(pl.id, uris) },
     )
 }
 
@@ -500,8 +567,23 @@ private fun TrackListScreen(
     emptyText: String = "Нет треков",
     showCovers: Boolean = true,
     menuFor: (Track) -> List<Pair<String, () -> Unit>>,
+    /** Если задан, треки можно перетаскивать (долгое нажатие); получает новый порядок URI. */
+    onReorder: ((List<String>) -> Unit)? = null,
 ) {
-    LazyColumn(Modifier.fillMaxSize()) {
+    val working = remember { mutableStateListOf<Track>() }
+    val listState = rememberLazyListState()
+    val reorder = rememberReorderState(
+        listState,
+        ReorderCallbacks(
+            canDrag = { onReorder != null && it is String },
+            onStart = { working.clear(); working.addAll(list) },
+            onMove = { from, to -> working.moveByKey(from, to) { it.uri } },
+            onEnd = { onReorder?.invoke(working.map { it.uri }) },
+        ),
+    )
+    val shown: List<Track> = if (reorder.isDragging) working else list
+
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
         item {
             Column(Modifier.padding(16.dp)) {
                 Text(header, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -517,8 +599,12 @@ private fun TrackListScreen(
             }
         }
         if (list.isEmpty()) item { Text(emptyText, Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        itemsIndexed(list, key = { i, t -> "$i|${t.uri}" }) { i, t ->
-            TrackRow(t, vm.currentId == t.uri, { vm.play(list, i) }, menuFor(t), Modifier.animateItem(), showCover = showCovers)
+        itemsIndexed(shown, key = { _, t -> t.uri }) { i, t ->
+            TrackRow(
+                t, vm.currentId == t.uri, { vm.play(shown, i) }, menuFor(t),
+                if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(),
+                showCover = showCovers,
+            )
         }
     }
 }
@@ -810,18 +896,23 @@ private fun QualityBadge(info: AudioInfo?) {
 }
 
 /**
- * Быстрые настройки звука прямо в плеере: ряд кнопок «Bass», «Treble», «Subsonic», «EQ».
- * Нажатие на первые три открывает окно с тем же переключателем и ползунком, что и в настройках;
+ * Быстрые настройки звука прямо в плеере: ряд кнопок «Bass», «Treble», «Subsonic», «EQ», «Speed».
+ * Нажатие на «Bass», «Treble», «Subsonic» и «Speed» открывает окно с тем же переключателем и ползунком, что и в настройках;
  * «EQ» открывает эквалайзер. Включённые эффекты подсвечены.
  */
 @Composable
 private fun SoundPanel(vm: PlayerViewModel) {
     var dialog by remember { mutableStateOf<Int?>(null) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         SoundButton("Bass", vm.bassEnabled, Modifier.weight(1f)) { dialog = 0 }
         SoundButton("Treble", vm.trebleEnabled, Modifier.weight(1f)) { dialog = 1 }
         SoundButton("Subsonic", vm.subEnabled, Modifier.weight(1f)) { dialog = 2 }
         SoundButton("EQ", vm.eqMode != EqMode.OFF, Modifier.weight(1f)) { vm.openPlayerEqualizer() }
+        // Включённая скорость показывается прямо на кнопке («1,5x»)
+        SoundButton(
+            if (vm.speedEnabled) speedLabel(vm.speedValue) else "Speed",
+            vm.speedEnabled, Modifier.weight(1f),
+        ) { dialog = 3 }
     }
     dialog?.let { d ->
         AlertDialog(
@@ -831,7 +922,8 @@ private fun SoundPanel(vm: PlayerViewModel) {
                 when (d) {
                     0 -> BassControl(vm)
                     1 -> TrebleControl(vm)
-                    else -> SubsonicControl(vm)
+                    2 -> SubsonicControl(vm)
+                    else -> SpeedControl(vm)
                 }
             },
         )
@@ -841,7 +933,7 @@ private fun SoundPanel(vm: PlayerViewModel) {
 @Composable
 private fun SoundButton(label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val content: @Composable RowScope.() -> Unit = {
-        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
     }
     val pad = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
     if (active) {
@@ -917,6 +1009,53 @@ private fun TrebleControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = 
     onFinish = { vm.commitSound() },
     modifier = modifier,
 )
+
+/**
+ * Скорость воспроизведения: переключатель и ползунок от −3x (в 3 раза медленнее) до 3x (в 3 раза быстрее)
+ * с шагом 0,1, плюс кнопки точной подстройки.
+ */
+@Composable
+private fun SpeedControl(vm: PlayerViewModel, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth()) {
+        FxControl(
+            title = "Скорость воспроизведения",
+            enabled = vm.speedEnabled,
+            valueText = speedLabel(vm.speedValue) +
+                when {
+                    vm.speedValue > 0f -> " · быстрее"
+                    vm.speedValue < 0f -> " · медленнее"
+                    else -> " · обычная"
+                },
+            value = vm.speedValue,
+            range = AudioFx.SPEED_MIN..AudioFx.SPEED_MAX,
+            steps = 39,
+            onToggle = { vm.changeSpeedEnabled(it) },
+            onValue = { vm.changeSpeedValue(it) },
+            onFinish = { vm.commitSound() },
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = { vm.changeSpeedValue(vm.speedValue - 0.1f); vm.commitSound() },
+                enabled = vm.speedEnabled && vm.speedValue > AudioFx.SPEED_MIN + 0.05f,
+            ) { Text("Медленнее") }
+            TextButton(
+                onClick = { vm.changeSpeedValue(0f); vm.commitSound() },
+                enabled = vm.speedEnabled && vm.speedValue != 0f,
+            ) { Text("1x") }
+            TextButton(
+                onClick = { vm.changeSpeedValue(vm.speedValue + 0.1f); vm.commitSound() },
+                enabled = vm.speedEnabled && vm.speedValue < AudioFx.SPEED_MAX - 0.05f,
+            ) { Text("Быстрее") }
+        }
+    }
+}
+
+/** «1,5x» — в 1,5 раза быстрее, «−1,5x» — в 1,5 раза медленнее. */
+private fun speedLabel(pos: Float): String {
+    val v = AudioFx.speedLabelValue(pos)
+    val num = "%.1f".format(kotlin.math.abs(v))
+    return if (v < 0f) "−${num}x" else "${num}x"
+}
 
 /** Subsonic-фильтр (срез инфранизких частот): переключатель и ползунок интенсивности 0...100 %. */
 @Composable
@@ -1117,6 +1256,7 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         BassControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         TrebleControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         SubsonicControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        SpeedControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         ListItem(
             modifier = Modifier.clickable { vm.push(Screen.Equalizer) },
             leadingContent = { Icon(Icons.Default.Equalizer, null) },

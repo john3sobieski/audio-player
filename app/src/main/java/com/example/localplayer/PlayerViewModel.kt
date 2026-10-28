@@ -16,6 +16,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -25,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import kotlin.math.roundToInt
 
 sealed interface Screen {
     data object Settings : Screen
@@ -66,6 +68,105 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .sortedBy { it.name.lowercase() }
     }
 
+    // ---------- Сортировка и ручной порядок ----------
+
+    var trackSort by mutableStateOf(library.loadSort("tracks", SortState(SortKey.NAME), TRACK_SORT_KEYS))
+        private set
+    var albumSort by mutableStateOf(library.loadSort("albums", SortState(SortKey.NAME), ALBUM_SORT_KEYS))
+        private set
+    var playlistSort by mutableStateOf(library.loadSort("playlists", SortState(SortKey.MANUAL), PLAYLIST_SORT_KEYS))
+        private set
+
+    private var trackOrder by mutableStateOf(library.loadOrder("tracks"))
+    private var albumOrder by mutableStateOf(library.loadOrder("albums"))
+    private var playlistOrder by mutableStateOf(library.loadOrder("playlists"))
+
+    /** Универсальная сортировка: ручной порядок или компаратор, затем (при необходимости) разворот. */
+    private fun <T> applySort(
+        base: List<T>,
+        sort: SortState,
+        manual: List<String>,
+        id: (T) -> String,
+        comparator: (SortKey) -> Comparator<T>,
+    ): List<T> {
+        val asc = if (sort.key == SortKey.MANUAL) {
+            val pos = HashMap<String, Int>(manual.size * 2)
+            manual.forEachIndexed { i, k -> pos[k] = i }
+            // Новые элементы, которых нет в сохранённом порядке, остаются в конце в исходном порядке
+            base.sortedBy { pos[id(it)] ?: Int.MAX_VALUE }
+        } else {
+            base.sortedWith(comparator(sort.key))
+        }
+        return if (sort.descending) asc.asReversed() else asc
+    }
+
+    val sortedTracks by derivedStateOf {
+        applySort(tracks, trackSort, trackOrder, { it.uri }) { key ->
+            when (key) {
+                SortKey.ARTIST -> compareBy<Track>({ it.artist.lowercase() }, { it.title.lowercase() })
+                SortKey.ALBUM -> compareBy<Track>(
+                    { it.album.lowercase() },
+                    { it.trackNo.takeIf { n -> n > 0 } ?: Int.MAX_VALUE },
+                    { it.title.lowercase() },
+                )
+                SortKey.DURATION -> compareBy<Track>({ it.durationMs }, { it.title.lowercase() })
+                SortKey.FILE_DATE -> compareBy<Track>({ it.modified }, { it.title.lowercase() })
+                else -> compareBy<Track> { it.title.lowercase() }
+            }
+        }
+    }
+
+    val sortedAlbums by derivedStateOf {
+        applySort(albums, albumSort, albumOrder, { it.key }) { key ->
+            when (key) {
+                SortKey.ARTIST -> compareBy<Album>({ it.artist.lowercase() }, { it.name.lowercase() })
+                SortKey.COUNT -> compareBy<Album>({ it.tracks.size }, { it.name.lowercase() })
+                SortKey.FILE_DATE -> compareBy<Album>({ a -> a.tracks.maxOfOrNull { it.modified } ?: 0L }, { it.name.lowercase() })
+                else -> compareBy<Album> { it.name.lowercase() }
+            }
+        }
+    }
+
+    val sortedPlaylists by derivedStateOf {
+        applySort(playlists, playlistSort, playlistOrder, { it.id }) { key ->
+            when (key) {
+                SortKey.CREATED -> compareBy<Playlist>({ it.createdAt }, { it.name.lowercase() })
+                SortKey.UPDATED -> compareBy<Playlist>({ it.updatedAt }, { it.name.lowercase() })
+                SortKey.COUNT -> compareBy<Playlist>({ it.trackUris.size }, { it.name.lowercase() })
+                else -> compareBy<Playlist> { it.name.lowercase() }
+            }
+        }
+    }
+
+    fun changeTrackSort(s: SortState) { trackSort = s; library.saveSort("tracks", s) }
+    fun changeAlbumSort(s: SortState) { albumSort = s; library.saveSort("albums", s) }
+    fun changePlaylistSort(s: SortState) { playlistSort = s; library.saveSort("playlists", s) }
+
+    /**
+     * Пользователь перетащил элемент: показанный порядок становится ручным, а сортировка переключается на «Вручную».
+     * При убывающем направлении ручной порядок хранится развёрнутым, чтобы список не «перевернулся».
+     */
+    fun commitTrackOrder(shown: List<String>) {
+        val manual = if (trackSort.descending) shown.asReversed() else shown
+        trackOrder = manual.toList()
+        viewModelScope.launch(Dispatchers.IO) { library.saveOrder("tracks", manual.toList()) }
+        changeTrackSort(trackSort.copy(key = SortKey.MANUAL))
+    }
+
+    fun commitAlbumOrder(shown: List<String>) {
+        val manual = if (albumSort.descending) shown.asReversed() else shown
+        albumOrder = manual.toList()
+        viewModelScope.launch(Dispatchers.IO) { library.saveOrder("albums", manual.toList()) }
+        changeAlbumSort(albumSort.copy(key = SortKey.MANUAL))
+    }
+
+    fun commitPlaylistOrder(shown: List<String>) {
+        val manual = if (playlistSort.descending) shown.asReversed() else shown
+        playlistOrder = manual.toList()
+        viewModelScope.launch(Dispatchers.IO) { library.saveOrder("playlists", manual.toList()) }
+        changePlaylistSort(playlistSort.copy(key = SortKey.MANUAL))
+    }
+
     // ---------- Настройки звука ----------
     var monoEnabled by mutableStateOf(false)
         private set
@@ -102,6 +203,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     var subLevel by mutableFloatStateOf(50f)
         private set
     var globalGains by mutableStateOf(List(AudioFx.BANDS) { 0f })
+        private set
+    var speedEnabled by mutableStateOf(false)
+        private set
+    /** Положение ползунка скорости (−2...+2), см. [AudioFx.SPEED_MIN]. */
+    var speedValue by mutableFloatStateOf(0f)
         private set
 
     /** Счётчик, который увеличивается при любом изменении кривых треков или смене текущего трека. */
@@ -188,6 +294,25 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         subLevel = value
         AudioFx.subLevel = value
         AudioFx.refresh()
+    }
+
+    private fun applySpeed() {
+        controller?.setPlaybackParameters(PlaybackParameters(AudioFx.effectiveSpeed()))
+    }
+
+    fun changeSpeedEnabled(value: Boolean) {
+        speedEnabled = value
+        AudioFx.speedEnabled = value
+        applySpeed()
+        AudioFx.persistSettings()
+    }
+
+    /** Скорость от −3x (в 3 раза медленнее) до 3x (в 3 раза быстрее) с шагом 0,1. Меняется «вживую» при перетаскивании ползунка; сохраняется в [commitSound]. */
+    fun changeSpeedValue(value: Float) {
+        val v = ((value * 10f).roundToInt() / 10f).coerceIn(AudioFx.SPEED_MIN, AudioFx.SPEED_MAX)
+        speedValue = v
+        AudioFx.speedLevel = v
+        if (speedEnabled) applySpeed()
     }
 
     fun setEqBand(band: Int, db: Float, fromPlayer: Boolean) {
@@ -311,6 +436,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         trebleDb = AudioFx.trebleLevel
         subEnabled = AudioFx.subEnabled
         subLevel = AudioFx.subLevel
+        speedEnabled = AudioFx.speedEnabled
+        speedValue = AudioFx.speedLevel
         globalGains = AudioFx.globalGains.toList()
 
         playlists = library.loadPlaylists()
@@ -345,6 +472,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 trackRev++
                 shuffle = c.shuffleModeEnabled
                 repeat = c.repeatMode
+                applySpeed()
             } catch (_: Exception) {
             }
         }, ContextCompat.getMainExecutor(app))
@@ -444,12 +572,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createPlaylist(name: String, first: Track? = null) {
         val clean = name.trim().ifEmpty { return }
-        commit(playlists + Playlist(UUID.randomUUID().toString(), clean, listOfNotNull(first?.uri)))
+        val now = System.currentTimeMillis()
+        commit(playlists + Playlist(UUID.randomUUID().toString(), clean, listOfNotNull(first?.uri), now, now))
     }
 
     fun renamePlaylist(id: String, name: String) {
         val clean = name.trim().ifEmpty { return }
-        commit(playlists.map { if (it.id == id) it.copy(name = clean) else it })
+        commit(playlists.map { if (it.id == id) it.copy(name = clean, updatedAt = System.currentTimeMillis()) else it })
     }
 
     fun deletePlaylist(id: String) {
@@ -458,13 +587,29 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addToPlaylist(id: String, track: Track) {
         commit(playlists.map {
-            if (it.id == id && track.uri !in it.trackUris) it.copy(trackUris = it.trackUris + track.uri) else it
+            if (it.id == id && track.uri !in it.trackUris) {
+                it.copy(trackUris = it.trackUris + track.uri, updatedAt = System.currentTimeMillis())
+            } else it
         })
     }
 
     fun removeFromPlaylist(id: String, track: Track) {
         commit(playlists.map {
-            if (it.id == id) it.copy(trackUris = it.trackUris - track.uri) else it
+            if (it.id == id) it.copy(trackUris = it.trackUris - track.uri, updatedAt = System.currentTimeMillis()) else it
+        })
+    }
+
+    /** Новый порядок треков внутри плейлиста (после перетаскивания). Недоступные сейчас файлы остаются в конце. */
+    fun reorderPlaylistTracks(id: String, shown: List<String>) {
+        commit(playlists.map {
+            if (it.id != id) it
+            else {
+                val shownSet = shown.toHashSet()
+                it.copy(
+                    trackUris = shown + it.trackUris.filter { u -> u !in shownSet },
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
         })
     }
 

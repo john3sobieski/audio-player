@@ -56,6 +56,19 @@ object AudioFx {
     /** Интенсивность subsonic-фильтра, в процентах. */
     const val SUB_MAX = 100f
 
+    /**
+     * Положение ползунка скорости: −2...+2 с шагом 0,1. Показывается как множитель:
+     * 0 = обычная скорость (1x), +2 = в 3 раза быстрее (3x), −2 = в 3 раза медленнее (−3x).
+     */
+    const val SPEED_MIN = -2f
+    const val SPEED_MAX = 2f
+
+    /** Реальная скорость плеера для положения ползунка: быстрее — 1+t, медленнее — 1/(1+|t|). */
+    fun speedFromPos(t: Float): Float = if (t >= 0f) 1f + t else 1f / (1f - t)
+
+    /** Множитель для показа пользователю: 1...3 — ускорение, −1...−3 — замедление в N раз. */
+    fun speedLabelValue(t: Float): Float = if (t >= 0f) 1f + t else t - 1f
+
     val BAND_FREQS = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 3500f, 6000f, 9000f, 12500f, 16000f)
     val BAND_LABELS = listOf("32", "64", "125", "250", "500", "1к", "2к", "3,5к", "6к", "9к", "12к", "16к")
 
@@ -102,6 +115,11 @@ object AudioFx {
     var trebleLevel = 6f
     var subEnabled = false
     var subLevel = 50f
+    var speedEnabled = false
+    var speedLevel = 0f // положение ползунка, см. SPEED_MIN
+
+    /** Скорость, с которой плеер играет прямо сейчас (1x, если эффект выключен). */
+    fun effectiveSpeed(): Float = if (speedEnabled) speedFromPos(speedLevel) else 1f
 
     var globalGains: FloatArray = ZERO
         private set
@@ -137,6 +155,8 @@ object AudioFx {
         trebleLevel = p.getFloat("treble_db", 6f).coerceIn(0f, TREBLE_MAX_DB)
         subEnabled = p.getBoolean("sub_enabled", false)
         subLevel = p.getFloat("sub_level", 50f).coerceIn(0f, SUB_MAX)
+        speedEnabled = p.getBoolean("speed_enabled", false)
+        speedLevel = p.getFloat("speed_pos", 0f).coerceIn(SPEED_MIN, SPEED_MAX)
         globalGains = parseGains(p.getString("eq_global", null))
         p.getStringSet("eq_global_excluded", null)?.let { globalExcluded.addAll(it) }
 
@@ -167,6 +187,8 @@ object AudioFx {
             ?.putFloat("treble_db", trebleLevel)
             ?.putBoolean("sub_enabled", subEnabled)
             ?.putFloat("sub_level", subLevel)
+            ?.putBoolean("speed_enabled", speedEnabled)
+            ?.putFloat("speed_pos", speedLevel)
             ?.putString("eq_global", globalGains.joinToString(","))
             ?.putStringSet("eq_global_excluded", HashSet(globalExcluded))
             ?.apply()

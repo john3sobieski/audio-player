@@ -9,6 +9,8 @@ data class Track(
     val durationMs: Long,
     val trackNo: Int,
     val info: AudioInfo = AudioInfo(),
+    /** Дата изменения файла (мс): нужна для сортировки «по дате файла». */
+    val modified: Long = 0L,
 )
 
 data class Album(
@@ -22,7 +24,28 @@ data class Playlist(
     val id: String,
     val name: String,
     val trackUris: List<String>,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
 )
 
 const val NO_ALBUM = "Без альбома"
 const val NO_ARTIST = "Неизвестный исполнитель"
+
+/** Способы сортировки списков. [MANUAL] — порядок, который пользователь задал перетаскиванием. */
+enum class SortKey(val label: String) {
+    MANUAL("Вручную"),
+    NAME("По названию"),
+    ARTIST("По исполнителю"),
+    ALBUM("По альбому"),
+    DURATION("По длительности"),
+    COUNT("По числу треков"),
+    FILE_DATE("По дате файла"),
+    CREATED("По дате создания"),
+    UPDATED("По дате изменения"),
+}
+
+data class SortState(val key: SortKey, val descending: Boolean = false)
+
+val TRACK_SORT_KEYS = listOf(SortKey.MANUAL, SortKey.NAME, SortKey.ARTIST, SortKey.ALBUM, SortKey.DURATION, SortKey.FILE_DATE)
+val ALBUM_SORT_KEYS = listOf(SortKey.MANUAL, SortKey.NAME, SortKey.ARTIST, SortKey.COUNT, SortKey.FILE_DATE)
+val PLAYLIST_SORT_KEYS = listOf(SortKey.MANUAL, SortKey.NAME, SortKey.CREATED, SortKey.UPDATED, SortKey.COUNT)
