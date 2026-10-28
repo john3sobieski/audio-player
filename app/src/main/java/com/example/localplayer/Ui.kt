@@ -611,7 +611,7 @@ private fun TrackListScreen(
         itemsIndexed(shown, key = { _, t -> t.uri }) { i, t ->
             TrackRow(
                 t, vm.currentId == t.uri, i + 1, { vm.play(shown, i) }, menuFor(t),
-                if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(),
+                if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null),
                 showCover = showCovers,
             )
         }

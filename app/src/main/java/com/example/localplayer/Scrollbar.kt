@@ -110,8 +110,11 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
             val now = withFrameNanos { it }
             val dtMs = (now - last) / 1_000_000f
             last = now
+            val prev = smooth
             smooth += (target - smooth) * (1f - exp(-dtMs / DRAG_SMOOTHING_MS))
-            scrollToFraction(state, smooth)
+            if (kotlin.math.abs(smooth - target) < 0.0002f) smooth = target
+            // Не дёргаем список, пока положение не изменилось
+            if (smooth != prev) scrollToFraction(state, smooth)
         }
     }
 

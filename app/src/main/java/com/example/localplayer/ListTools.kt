@@ -238,6 +238,9 @@ fun LazyItemScope.reorderableItem(state: ReorderState, key: Any): Modifier {
     val shadow = with(LocalDensity.current) { 10.dp.toPx() }
     return Modifier
         .animateItem(
+            // Без появления/исчезания: при быстрой прокрутке ползунком строки иначе «проявляются» около секунды
+            fadeInSpec = null,
+            fadeOutSpec = null,
             // У поднятой строки анимацию места отключаем: её положение задаёт палец
             placementSpec = if (dragged) null else spring(
                 stiffness = Spring.StiffnessMediumLow,
