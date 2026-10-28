@@ -31,7 +31,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -111,7 +113,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -774,58 +775,129 @@ private fun QualityBadge(info: AudioInfo?) {
     }
 }
 
-/** Быстрые настройки звука прямо в плеере: усиление басов (можно менять во время прослушивания) и переход к эквалайзеру. */
+/**
+ * Быстрые настройки звука прямо в плеере: ряд кнопок «Басы», «Требл», «Subsonic», «EQ».
+ * Нажатие на первые три открывает окно с тем же переключателем и ползунком, что и в настройках;
+ * «EQ» открывает эквалайзер. Включённые эффекты подсвечены.
+ */
 @Composable
 private fun SoundPanel(vm: PlayerViewModel) {
-    Surface(tonalElevation = 2.dp, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            BassControl(vm)
-            TextButton(onClick = { vm.openPlayerEqualizer() }) {
-                Icon(Icons.Default.Equalizer, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Эквалайзер: ${eqModeLabel(vm.eqMode)}")
-            }
-        }
+    var dialog by remember { mutableStateOf<Int?>(null) }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        SoundButton("Басы", vm.bassEnabled, Modifier.weight(1f)) { dialog = 0 }
+        SoundButton("Требл", vm.trebleEnabled, Modifier.weight(1f)) { dialog = 1 }
+        SoundButton("Subsonic", vm.subEnabled, Modifier.weight(1f)) { dialog = 2 }
+        SoundButton("EQ", vm.eqMode != EqMode.OFF, Modifier.weight(1f)) { vm.openPlayerEqualizer() }
+    }
+    dialog?.let { d ->
+        AlertDialog(
+            onDismissRequest = { dialog = null },
+            confirmButton = { TextButton(onClick = { dialog = null }) { Text("Готово") } },
+            text = {
+                when (d) {
+                    0 -> BassControl(vm)
+                    1 -> TrebleControl(vm)
+                    else -> SubsonicControl(vm)
+                }
+            },
+        )
     }
 }
 
-/**
- * Усиление басов: переключатель и ползунок 0...+15 дБ. Используется и в плеере, и в настройках.
- * Доступно только при выключенном эквалайзере.
- */
 @Composable
-private fun BassControl(vm: PlayerViewModel, modifier: Modifier = Modifier) {
-    val available = vm.eqMode == EqMode.OFF
+private fun SoundButton(label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val content: @Composable RowScope.() -> Unit = {
+        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+    }
+    val pad = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+    if (active) {
+        FilledTonalButton(onClick = onClick, modifier = modifier, contentPadding = pad, content = content)
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = pad, content = content)
+    }
+}
+
+/** Общий вид настройки эффекта: заголовок, подпись, переключатель и ползунок. Одинаков для басов, требла и subsonic-фильтра. */
+@Composable
+private fun FxControl(
+    title: String,
+    enabled: Boolean,
+    valueText: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    onToggle: (Boolean) -> Unit,
+    onValue: (Float) -> Unit,
+    onFinish: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Усиление басов", style = MaterialTheme.typography.titleSmall)
+                Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    when {
-                        !available -> "Недоступно: сначала выключите эквалайзер"
-                        vm.bassEnabled -> "+${vm.bassDb.roundToInt()} дБ"
-                        else -> "Выключено"
-                    },
+                    if (enabled) valueText else "Выключено",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(
-                checked = vm.bassEnabled,
-                onCheckedChange = { vm.changeBassEnabled(it) },
-                enabled = available,
-            )
+            Switch(checked = enabled, onCheckedChange = onToggle)
         }
         Slider(
-            value = vm.bassDb,
-            onValueChange = { vm.changeBassDb(it) },
-            onValueChangeFinished = { vm.commitSound() },
-            valueRange = 0f..AudioFx.BASS_MAX_DB,
-            steps = AudioFx.BASS_MAX_DB.toInt() - 1,
-            enabled = available && vm.bassEnabled,
+            value = value,
+            onValueChange = onValue,
+            onValueChangeFinished = onFinish,
+            valueRange = range,
+            steps = steps,
+            enabled = enabled,
         )
     }
 }
+
+/** Усиление басов: переключатель и ползунок 0...+15 дБ. Работает независимо от эквалайзера. */
+@Composable
+private fun BassControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = FxControl(
+    title = "Усиление басов",
+    enabled = vm.bassEnabled,
+    valueText = "+${vm.bassDb.roundToInt()} дБ",
+    value = vm.bassDb,
+    range = 0f..AudioFx.BASS_MAX_DB,
+    steps = AudioFx.BASS_MAX_DB.toInt() - 1,
+    onToggle = { vm.changeBassEnabled(it) },
+    onValue = { vm.changeBassDb(it) },
+    onFinish = { vm.commitSound() },
+    modifier = modifier,
+)
+
+/** Усиление требла (высоких частот): переключатель и ползунок 0...+15 дБ. */
+@Composable
+private fun TrebleControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = FxControl(
+    title = "Усиление требла",
+    enabled = vm.trebleEnabled,
+    valueText = "+${vm.trebleDb.roundToInt()} дБ",
+    value = vm.trebleDb,
+    range = 0f..AudioFx.TREBLE_MAX_DB,
+    steps = AudioFx.TREBLE_MAX_DB.toInt() - 1,
+    onToggle = { vm.changeTrebleEnabled(it) },
+    onValue = { vm.changeTrebleDb(it) },
+    onFinish = { vm.commitSound() },
+    modifier = modifier,
+)
+
+/** Subsonic-фильтр (срез инфранизких частот): переключатель и ползунок интенсивности 0...100 %. */
+@Composable
+private fun SubsonicControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = FxControl(
+    title = "Subsonic-фильтр",
+    enabled = vm.subEnabled,
+    valueText = "${vm.subLevel.roundToInt()} %",
+    value = vm.subLevel,
+    range = 0f..AudioFx.SUB_MAX,
+    steps = 9,
+    onToggle = { vm.changeSubEnabled(it) },
+    onValue = { vm.changeSubLevel(it) },
+    onFinish = { vm.commitSound() },
+    modifier = modifier,
+)
 
 private fun eqModeLabel(mode: EqMode): String = when (mode) {
     EqMode.OFF -> "выключен"
@@ -1009,6 +1081,8 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             onChange = { vm.changeNormalize(it) },
         )
         BassControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        TrebleControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        SubsonicControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         ListItem(
             modifier = Modifier.clickable { vm.push(Screen.Equalizer) },
             leadingContent = { Icon(Icons.Default.Equalizer, null) },
@@ -1056,14 +1130,6 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
             EqModeRow(vm, EqMode.OFF, "Выключен", "Звук без обработки")
             EqModeRow(vm, EqMode.GLOBAL, "Для всех треков", "Одна настройка действует на все треки")
             EqModeRow(vm, EqMode.PER_TRACK, "Для каждого трека", "Своя настройка у каждого трека, запоминается навсегда")
-            if (vm.bassEnabled) {
-                Text(
-                    "Чтобы включить эквалайзер, сначала отключите усиление басов (в настройках или на экране плеера).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
         } else {
             Spacer(Modifier.height(8.dp))
@@ -1073,8 +1139,7 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
         val note = when (vm.eqMode) {
             EqMode.OFF ->
                 if (fromPlayer) {
-                    if (vm.bassEnabled) "Эквалайзер недоступен, пока включено усиление басов. Выключите басы, затем выберите режим эквалайзера в настройках."
-                    else "Эквалайзер выключен. Включить его и выбрать режим можно в настройках."
+                    "Эквалайзер выключен. Включить его и выбрать режим можно в настройках."
                 } else {
                     "Эквалайзер выключен. Выберите режим выше, чтобы настроить звук."
                 }
@@ -1182,13 +1247,9 @@ private fun PlayerEqualizerScreen(vm: PlayerViewModel) {
 
 @Composable
 private fun EqModeRow(vm: PlayerViewModel, mode: EqMode, title: String, subtitle: String) {
-    // Любой режим эквалайзера недоступен, пока включены басы
-    val blocked = mode != EqMode.OFF && vm.bassEnabled
     ListItem(
-        modifier = Modifier
-            .alpha(if (blocked) 0.5f else 1f)
-            .clickable(enabled = !blocked) { vm.changeEqMode(mode) },
-        leadingContent = { RadioButton(selected = vm.eqMode == mode, onClick = null, enabled = !blocked) },
+        modifier = Modifier.clickable { vm.changeEqMode(mode) },
+        leadingContent = { RadioButton(selected = vm.eqMode == mode, onClick = null) },
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
     )

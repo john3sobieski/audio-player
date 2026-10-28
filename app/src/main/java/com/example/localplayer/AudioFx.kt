@@ -41,8 +41,7 @@ enum class EqMode {
  * Единое хранилище настроек звука и их «действующих» значений для обработчика.
  *
  * Правила, которые поддерживаются на уровне интерфейса и ViewModel:
- *  - усиление басов можно включить, только если эквалайзер выключен;
- *  - эквалайзер (любой режим) можно включить, только если басы выключены;
+ *  - басы, требл и subsonic-фильтр работают независимо от эквалайзера (в любом его режиме) и друг от друга;
  *  - глобальная кривая и кривые отдельных треков хранятся независимо и не стираются при смене режима.
  *
  * Все изменения делаются из главного потока. Обработчик звука (аудиопоток) читает только
@@ -52,6 +51,10 @@ object AudioFx {
     const val BANDS = 12
     const val EQ_RANGE_DB = 12f
     const val BASS_MAX_DB = 15f
+    const val TREBLE_MAX_DB = 15f
+
+    /** Интенсивность subsonic-фильтра, в процентах. */
+    const val SUB_MAX = 100f
 
     val BAND_FREQS = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 3500f, 6000f, 9000f, 12500f, 16000f)
     val BAND_LABELS = listOf("32", "64", "125", "250", "500", "1к", "2к", "3,5к", "6к", "9к", "12к", "16к")
@@ -79,7 +82,15 @@ object AudioFx {
     @Volatile var bassDb = 0f
         private set
 
-    /** Увеличивается при каждом изменении [gains] / [bassDb], чтобы обработчик пересчитал фильтры. */
+    /** Действующее усиление требла в дБ (0, если выключено). */
+    @Volatile var trebleDb = 0f
+        private set
+
+    /** Действующая интенсивность subsonic-фильтра, 0...100 (0, если выключен). */
+    @Volatile var subIntensity = 0f
+        private set
+
+    /** Увеличивается при каждом изменении [gains] / [bassDb] / [trebleDb] / [subIntensity], чтобы обработчик пересчитал фильтры. */
     @Volatile var version = 0
         private set
 
@@ -87,6 +98,10 @@ object AudioFx {
     @Volatile var eqMode = EqMode.OFF
     var bassEnabled = false
     var bassLevel = 6f
+    var trebleEnabled = false
+    var trebleLevel = 6f
+    var subEnabled = false
+    var subLevel = 50f
 
     var globalGains: FloatArray = ZERO
         private set
@@ -115,8 +130,11 @@ object AudioFx {
         eqMode = runCatching { EqMode.valueOf(p.getString("eq_mode", "OFF") ?: "OFF") }.getOrDefault(EqMode.OFF)
         bassEnabled = p.getBoolean("bass_enabled", false)
         bassLevel = p.getFloat("bass_db", 6f).coerceIn(0f, BASS_MAX_DB)
+        trebleEnabled = p.getBoolean("treble_enabled", false)
+        trebleLevel = p.getFloat("treble_db", 6f).coerceIn(0f, TREBLE_MAX_DB)
+        subEnabled = p.getBoolean("sub_enabled", false)
+        subLevel = p.getFloat("sub_level", 50f).coerceIn(0f, SUB_MAX)
         globalGains = parseGains(p.getString("eq_global", null))
-        if (bassEnabled && eqMode != EqMode.OFF) bassEnabled = false // на случай повреждённых данных
 
         try {
             val f = File(app.filesDir, TRACKS_FILE)
@@ -141,6 +159,10 @@ object AudioFx {
             ?.putString("eq_mode", eqMode.name)
             ?.putBoolean("bass_enabled", bassEnabled)
             ?.putFloat("bass_db", bassLevel)
+            ?.putBoolean("treble_enabled", trebleEnabled)
+            ?.putFloat("treble_db", trebleLevel)
+            ?.putBoolean("sub_enabled", subEnabled)
+            ?.putFloat("sub_level", subLevel)
             ?.putString("eq_global", globalGains.joinToString(","))
             ?.apply()
     }
@@ -211,7 +233,9 @@ object AudioFx {
             EqMode.GLOBAL -> globalGains
             EqMode.PER_TRACK -> currentUri?.let { trackGains[key(it)] } ?: ZERO
         }
-        bassDb = if (bassEnabled && eqMode == EqMode.OFF) bassLevel else 0f
+        bassDb = if (bassEnabled) bassLevel else 0f
+        trebleDb = if (trebleEnabled) trebleLevel else 0f
+        subIntensity = if (subEnabled) subLevel else 0f
         version++
     }
 
@@ -242,7 +266,8 @@ object AudioFx {
  * Обработчик звука для ExoPlayer. Порядок обработки:
  *  1. Моно (усреднение левого и правого каналов).
  *  2. Нормализация громкости (медленная автоподстройка усиления к целевому уровню).
- *  3. 12-полосный эквалайзер (пиковые биквад-фильтры) и усиление басов (низкочастотная «полка»).
+ *  3. 12-полосный эквалайзер (пиковые биквад-фильтры), басы (низкочастотная «полка»), требл (высокочастотная «полка»)
+ *     и subsonic-фильтр (срез инфранизких частот).
  *  4. Мягкий ограничитель пиков.
  *
  * Работает с 16-битным PCM и float PCM; для остальных форматов остаётся неактивным.
@@ -262,8 +287,11 @@ class AudioFxProcessor : BaseAudioProcessor() {
     private var gainAttack = 0.0
     private var gainRelease = 0.0
 
-    // Фильтры: BANDS полос эквалайзера + 1 фильтр басов
-    private val filterCount = AudioFx.BANDS + 1
+    // Фильтры: BANDS полос эквалайзера + бас + требл + 2 ступени subsonic-фильтра
+    private val bassIdx = AudioFx.BANDS
+    private val trebleIdx = AudioFx.BANDS + 1
+    private val subIdx = AudioFx.BANDS + 2 // и subIdx + 1
+    private val filterCount = AudioFx.BANDS + 4
     private val b0 = DoubleArray(filterCount)
     private val b1 = DoubleArray(filterCount)
     private val b2 = DoubleArray(filterCount)
@@ -395,6 +423,8 @@ class AudioFxProcessor : BaseAudioProcessor() {
         appliedVersion = AudioFx.version
         val gains = AudioFx.gains
         val bass = AudioFx.bassDb.toDouble()
+        val treble = AudioFx.trebleDb.toDouble()
+        val sub = AudioFx.subIntensity.toDouble()
 
         val on = BooleanArray(filterCount)
         var maxBoost = 0.0
@@ -407,9 +437,22 @@ class AudioFxProcessor : BaseAudioProcessor() {
             maxBoost = max(maxBoost, g)
         }
         if (bass > 0.05) {
-            lowShelf(AudioFx.BANDS, BASS_CORNER_HZ, bass)
-            on[AudioFx.BANDS] = true
+            lowShelf(bassIdx, BASS_CORNER_HZ, bass)
+            on[bassIdx] = true
             maxBoost = max(maxBoost, bass)
+        }
+        if (treble > 0.05 && TREBLE_CORNER_HZ < sampleRate * 0.45) {
+            highShelf(trebleIdx, TREBLE_CORNER_HZ, treble)
+            on[trebleIdx] = true
+            maxBoost = max(maxBoost, treble)
+        }
+        if (sub > 0.5) {
+            // Интенсивность 0...100 % → частота среза 12...40 Гц, две ступени Баттерворта (24 дБ/окт)
+            val fc = SUB_MIN_HZ + (SUB_MAX_HZ - SUB_MIN_HZ) * (sub / AudioFx.SUB_MAX)
+            highPass(subIdx, fc, SUB_Q1)
+            highPass(subIdx + 1, fc, SUB_Q2)
+            on[subIdx] = true
+            on[subIdx + 1] = true
         }
 
         // Выключенным фильтрам обнуляем состояние, чтобы при повторном включении не было щелчка
@@ -455,6 +498,34 @@ class AudioFxProcessor : BaseAudioProcessor() {
         a2[i] = ((a + 1) + (a - 1) * cosW - twoSqrtAAlpha) / a0
     }
 
+    /** Высокочастотная «полка» (усиление требла), формулы RBJ Audio EQ Cookbook при S = 1. */
+    private fun highShelf(i: Int, freq: Double, gainDb: Double) {
+        val a = 10.0.pow(gainDb / 40.0)
+        val w0 = 2.0 * PI * freq / sampleRate
+        val cosW = cos(w0)
+        val alpha = sin(w0) / 2.0 * sqrt(2.0)
+        val twoSqrtAAlpha = 2.0 * sqrt(a) * alpha
+        val a0 = (a + 1) - (a - 1) * cosW + twoSqrtAAlpha
+        b0[i] = a * ((a + 1) + (a - 1) * cosW + twoSqrtAAlpha) / a0
+        b1[i] = -2.0 * a * ((a - 1) + (a + 1) * cosW) / a0
+        b2[i] = a * ((a + 1) + (a - 1) * cosW - twoSqrtAAlpha) / a0
+        a1[i] = 2.0 * ((a - 1) - (a + 1) * cosW) / a0
+        a2[i] = ((a + 1) - (a - 1) * cosW - twoSqrtAAlpha) / a0
+    }
+
+    /** Фильтр высоких частот (срез инфранизких), формулы RBJ Audio EQ Cookbook. */
+    private fun highPass(i: Int, freq: Double, q: Double) {
+        val w0 = 2.0 * PI * freq / sampleRate
+        val cosW = cos(w0)
+        val alpha = sin(w0) / (2.0 * q)
+        val a0 = 1.0 + alpha
+        b0[i] = (1.0 + cosW) / 2.0 / a0
+        b1[i] = -(1.0 + cosW) / a0
+        b2[i] = (1.0 + cosW) / 2.0 / a0
+        a1[i] = -2.0 * cosW / a0
+        a2[i] = (1.0 - alpha) / a0
+    }
+
     private fun softLimit(x: Double): Double {
         val a = abs(x)
         return if (a <= LIMIT_KNEE) x else sign(x) * (LIMIT_KNEE + (1.0 - LIMIT_KNEE) * tanh((a - LIMIT_KNEE) / (1.0 - LIMIT_KNEE)))
@@ -470,5 +541,10 @@ class AudioFxProcessor : BaseAudioProcessor() {
         const val MAX_GAIN = 2.8              // +9 dB
         const val LIMIT_KNEE = 0.9
         const val BASS_CORNER_HZ = 110.0
+        const val TREBLE_CORNER_HZ = 6000.0
+        const val SUB_MIN_HZ = 12.0
+        const val SUB_MAX_HZ = 40.0
+        const val SUB_Q1 = 0.5412 // добротности 4-го порядка Баттерворта (две ступени)
+        const val SUB_Q2 = 1.3066
     }
 }

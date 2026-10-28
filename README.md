@@ -19,12 +19,12 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 - **Sound settings:**
   - **Mono / stereo** switch
   - **Volume normalization** that evens out loudness between tracks (a slow automatic gain control with a soft limiter, applied in real time)
-  - **Bass boost** from 0 to +15 dB, adjustable while a song is playing (also available right in the player)
+  - **Bass boost** and **treble boost** from 0 to +15 dB, and a **subsonic filter** (intensity 0–100 %), adjustable while a song is playing. In the player they are a row of buttons (Bass / Treble / Subsonic / EQ) that open the same sliders as in settings
   - **12-band equalizer** (32 Hz to 16 kHz, ±12 dB) with two modes:
     - *All tracks*: one curve applies to every track; it can be edited both in Settings and in the player
     - *Per track*: every track remembers its own curve permanently (stored on the device); in this mode the curves can be edited only in the player, and the Settings sliders are locked
     - The mode is chosen in Settings only; the player's equalizer screen has no mode switch and explains which mode is active
-  - Bass boost and the equalizer are mutually exclusive: bass boost can be enabled only while the equalizer is off, and the equalizer can be enabled only while bass boost is off. Switching modes never erases saved curves.
+  - Bass, treble, subsonic filter and the equalizer are independent and can be used together. Switching equalizer modes never erases saved curves.
 - **Smooth animations** for screen transitions, tab switching, the full-screen player, and list changes.
 - Supported formats: MP3, FLAC, OGG/Opus, M4A/AAC, WAV, and other formats supported by Android.
 - Material 3 design with dynamic colors on Android 12+ and light/dark theme support.
@@ -87,7 +87,7 @@ app/src/main/java/com/example/localplayer/
 ├── PlayerViewModel.kt     # App state, playlists, player control
 ├── Library.kt             # Folder scanning, metadata cache, playlist storage
 ├── PlaybackService.kt     # Background playback (Media3 MediaSessionService)
-├── AudioFx.kt             # Sound settings storage + real-time audio processor (mono, normalization, 12-band EQ, bass boost)
+├── AudioFx.kt             # Sound settings storage + real-time audio processor (mono, normalization, 12-band EQ, bass/treble shelves, subsonic filter)
 └── Models.kt              # Track / Album / Playlist data classes
 ```
 

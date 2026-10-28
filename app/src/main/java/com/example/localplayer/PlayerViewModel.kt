@@ -84,14 +84,22 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         AudioFx.persistSettings()
     }
 
-    // ---------- Усиление басов и эквалайзер ----------
-    // Правила: басы включаются только при выключенном эквалайзере, а эквалайзер (любой режим) только при выключенных басах.
+    // ---------- Басы, требл, subsonic-фильтр и эквалайзер ----------
+    // Все четыре настройки независимы друг от друга и работают одновременно.
 
     var eqMode by mutableStateOf(EqMode.OFF)
         private set
     var bassEnabled by mutableStateOf(false)
         private set
     var bassDb by mutableFloatStateOf(6f)
+        private set
+    var trebleEnabled by mutableStateOf(false)
+        private set
+    var trebleDb by mutableFloatStateOf(6f)
+        private set
+    var subEnabled by mutableStateOf(false)
+        private set
+    var subLevel by mutableFloatStateOf(50f)
         private set
     var globalGains by mutableStateOf(List(AudioFx.BANDS) { 0f })
         private set
@@ -121,7 +129,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val customTrackCount: Int get() = trackRev.let { AudioFx.customTrackCount() }
 
     fun changeEqMode(mode: EqMode) {
-        if (mode != EqMode.OFF && bassEnabled) return // сначала нужно отключить басы
         eqMode = mode
         AudioFx.eqMode = mode
         AudioFx.refresh()
@@ -130,7 +137,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun changeBassEnabled(value: Boolean) {
-        if (value && eqMode != EqMode.OFF) return // сначала нужно выключить эквалайзер
         bassEnabled = value
         AudioFx.bassEnabled = value
         AudioFx.refresh()
@@ -141,6 +147,32 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun changeBassDb(value: Float) {
         bassDb = value
         AudioFx.bassLevel = value
+        AudioFx.refresh()
+    }
+
+    fun changeTrebleEnabled(value: Boolean) {
+        trebleEnabled = value
+        AudioFx.trebleEnabled = value
+        AudioFx.refresh()
+        AudioFx.persistSettings()
+    }
+
+    fun changeTrebleDb(value: Float) {
+        trebleDb = value
+        AudioFx.trebleLevel = value
+        AudioFx.refresh()
+    }
+
+    fun changeSubEnabled(value: Boolean) {
+        subEnabled = value
+        AudioFx.subEnabled = value
+        AudioFx.refresh()
+        AudioFx.persistSettings()
+    }
+
+    fun changeSubLevel(value: Float) {
+        subLevel = value
+        AudioFx.subLevel = value
         AudioFx.refresh()
     }
 
@@ -248,6 +280,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         eqMode = AudioFx.eqMode
         bassEnabled = AudioFx.bassEnabled
         bassDb = AudioFx.bassLevel
+        trebleEnabled = AudioFx.trebleEnabled
+        trebleDb = AudioFx.trebleLevel
+        subEnabled = AudioFx.subEnabled
+        subLevel = AudioFx.subLevel
         globalGains = AudioFx.globalGains.toList()
 
         playlists = library.loadPlaylists()
