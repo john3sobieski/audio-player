@@ -21,6 +21,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -616,7 +617,7 @@ private fun TrackListScreen(
                     fadeOutSpec = null,
                     placementSpec = if (FastScroll.active) null else androidx.compose.animation.core.spring(
                         stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                        visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold,
+                        visibilityThreshold = androidx.compose.ui.unit.IntOffset.Companion.VisibilityThreshold,
                     ),
                 ),
                 showCover = showCovers,
