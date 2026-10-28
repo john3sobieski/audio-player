@@ -117,14 +117,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val sortedAlbums by derivedStateOf {
-        applySort(albums, albumSort, albumOrder, { it.key }) { key ->
+        // «Без альбома» всегда в самом низу, при любой сортировке и направлении
+        val (noAlbum, regular) = applySort(albums, albumSort, albumOrder, { it.key }) { key ->
             when (key) {
                 SortKey.ARTIST -> compareBy<Album>({ it.artist.lowercase() }, { it.name.lowercase() })
                 SortKey.COUNT -> compareBy<Album>({ it.tracks.size }, { it.name.lowercase() })
                 SortKey.FILE_DATE -> compareBy<Album>({ a -> a.tracks.maxOfOrNull { it.modified } ?: 0L }, { it.name.lowercase() })
                 else -> compareBy<Album> { it.name.lowercase() }
             }
-        }
+        }.partition { it.name == NO_ALBUM }
+        regular + noAlbum
     }
 
     val sortedPlaylists by derivedStateOf {
@@ -404,6 +406,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var isPlaying by mutableStateOf(false)
         private set
+
+    /**
+     * Что показывать на кнопке Play/Pause. Меняется сразу по нажатию, не дожидаясь, пока плавное затухание
+     * реально остановит звук (само затухание остаётся); с реальным состоянием плеера синхронизируется по событиям.
+     */
+    var uiPlaying by mutableStateOf(false)
+        private set
     var shuffle by mutableStateOf(false)
         private set
     var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
@@ -412,7 +421,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val currentTrack: Track? get() = currentId?.let { trackByUri[it] }
 
     private val listener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) { this@PlayerViewModel.isPlaying = isPlaying }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            this@PlayerViewModel.isPlaying = isPlaying
+            uiPlaying = isPlaying
+        }
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            uiPlaying = isPlaying
+        }
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) uiPlaying = isPlaying
+        }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             currentId = mediaItem?.mediaId?.takeIf { it.isNotEmpty() }
             AudioFx.setCurrentUri(currentId)
@@ -467,6 +485,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 controller = c
                 c.addListener(listener)
                 isPlaying = c.isPlaying
+                uiPlaying = c.isPlaying
                 currentId = c.currentMediaItem?.mediaId?.takeIf { it.isNotEmpty() }
                 AudioFx.setCurrentUri(currentId)
                 trackRev++
@@ -535,6 +554,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.setMediaItems(list.map { it.toItem() }, index.coerceIn(0, list.lastIndex), 0L)
         c.prepare()
         c.play()
+        uiPlaying = true
     }
 
     fun playShuffled(list: List<Track>) {
@@ -544,7 +564,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun togglePlay() {
         val c = controller ?: return
-        if (c.isPlaying) c.pause() else c.play()
+        // Ориентируемся на то, что видит пользователь: во время затухания c.isPlaying ещё true
+        if (uiPlaying) {
+            uiPlaying = false
+            c.pause()
+        } else {
+            uiPlaying = true
+            c.play()
+        }
     }
     fun next() { controller?.seekToNextMediaItem() }
     fun prev() {

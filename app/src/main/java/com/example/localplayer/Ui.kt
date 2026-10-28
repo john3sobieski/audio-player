@@ -421,16 +421,19 @@ private fun TracksTab(vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         SortBar(vm.trackSort, TRACK_SORT_KEYS, { vm.changeTrackSort(it); scope.launch { listState.scrollToItem(0) } })
+        FastScrollContainer(listState) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(list, key = { _, t -> t.uri }) { i, t ->
                 TrackRow(
                     track = t,
                     current = vm.currentId == t.uri,
+                    number = i + 1,
                     onClick = { vm.play(list, i) },
                     menu = listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }),
                     modifier = reorderableItem(reorder, t.uri),
                 )
             }
+        }
         }
     }
 }
@@ -448,7 +451,8 @@ private fun AlbumsTab(vm: PlayerViewModel) {
     val reorder = rememberReorderState(
         listState,
         ReorderCallbacks(
-            canDrag = { it is String },
+            // «Без альбома» закреплён внизу и не перетаскивается
+            canDrag = { it is String && !it.startsWith(NO_ALBUM + "\u0000") },
             onStart = { working.clear(); working.addAll(sorted) },
             onMove = { from, to -> working.moveByKey(from, to) { it.key } },
             onEnd = { vm.commitAlbumOrder(working.map { it.key }) },
@@ -458,6 +462,7 @@ private fun AlbumsTab(vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         SortBar(vm.albumSort, ALBUM_SORT_KEYS, { vm.changeAlbumSort(it); scope.launch { listState.scrollToItem(0) } })
+        FastScrollContainer(listState) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(list, key = { _, a -> a.key }) { _, a ->
                 ListItem(
@@ -469,6 +474,7 @@ private fun AlbumsTab(vm: PlayerViewModel) {
                     },
                 )
             }
+        }
         }
     }
 }
@@ -494,6 +500,7 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
         if (vm.playlists.isNotEmpty()) {
             SortBar(vm.playlistSort, PLAYLIST_SORT_KEYS, { vm.changePlaylistSort(it); scope.launch { listState.scrollToItem(0) } })
         }
+        FastScrollContainer(listState, headerCount = 1) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             item {
                 ListItem(
@@ -523,6 +530,7 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
                     },
                 )
             }
+        }
         }
     }
 }
@@ -583,6 +591,7 @@ private fun TrackListScreen(
     )
     val shown: List<Track> = if (reorder.isDragging) working else list
 
+    FastScrollContainer(listState, headerCount = 1) {
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         item {
             Column(Modifier.padding(16.dp)) {
@@ -601,11 +610,12 @@ private fun TrackListScreen(
         if (list.isEmpty()) item { Text(emptyText, Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         itemsIndexed(shown, key = { _, t -> t.uri }) { i, t ->
             TrackRow(
-                t, vm.currentId == t.uri, { vm.play(shown, i) }, menuFor(t),
+                t, vm.currentId == t.uri, i + 1, { vm.play(shown, i) }, menuFor(t),
                 if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(),
                 showCover = showCovers,
             )
         }
+    }
     }
 }
 
@@ -617,6 +627,7 @@ private fun TrackListScreen(
 private fun TrackRow(
     track: Track,
     current: Boolean,
+    number: Int,
     onClick: () -> Unit,
     menu: List<Pair<String, () -> Unit>>,
     modifier: Modifier = Modifier,
@@ -626,25 +637,25 @@ private fun TrackRow(
     ListItem(
         modifier = modifier.clickable(onClick = onClick),
         leadingContent = {
-            if (showCover) {
-                // Обложка трека (если есть; иначе нота), как в «Альбомах», но поменьше.
-                // У играющего трека поверх обложки показывается значок воспроизведения.
-                Box(Modifier.size(TRACK_COVER_SIZE), contentAlignment = Alignment.Center) {
-                    Cover(track.uri, TRACK_COVER_SIZE)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Порядковый номер (до 4–5 цифр влезает без переноса); у играющего трека вместо него треугольник
+                Box(Modifier.width(TRACK_NUMBER_WIDTH), contentAlignment = Alignment.Center) {
                     if (current) {
-                        Box(
-                            Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.5f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
-                        }
+                        Icon(Icons.Default.PlayArrow, "Сейчас играет", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                    } else {
+                        Text(
+                            number.toString(),
+                            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
                     }
                 }
-            } else {
-                Icon(
-                    if (current) Icons.Default.PlayArrow else Icons.Default.MusicNote, null,
-                    tint = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (showCover) {
+                    Spacer(Modifier.width(8.dp))
+                    Cover(track.uri, TRACK_COVER_SIZE)
+                }
             }
         },
         headlineContent = { Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = color) },
@@ -673,6 +684,7 @@ private fun RowMenu(items: List<Pair<String, () -> Unit>>) {
 
 /** Размер обложки в списках треков (меньше, чем 56 dp в «Альбомах»). */
 private val TRACK_COVER_SIZE = 44.dp
+private val TRACK_NUMBER_WIDTH = 36.dp
 
 /** Размер обложки в полноэкранном плеере. Мини-плеер декодирует обложку в том же размере, чтобы при открытии плеера она уже была в кэше. */
 private val PLAYER_COVER_SIZE = 280.dp
@@ -796,7 +808,7 @@ private fun MiniPlayer(vm: PlayerViewModel) {
                 Text(t?.artist ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = { vm.togglePlay() }) {
-                Crossfade(targetState = vm.isPlaying, label = "miniPlay") { playing ->
+                Crossfade(targetState = vm.uiPlaying, label = "miniPlay") { playing ->
                     Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей")
                 }
             }
@@ -1177,7 +1189,7 @@ private fun PlayerControls(vm: PlayerViewModel) {
         }
         IconButton(onClick = { vm.prev() }) { Icon(Icons.Default.SkipPrevious, "Предыдущий", Modifier.size(36.dp)) }
         FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(72.dp)) {
-            Crossfade(targetState = vm.isPlaying, label = "bigPlay") { playing ->
+            Crossfade(targetState = vm.uiPlaying, label = "bigPlay") { playing ->
                 Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей", Modifier.size(40.dp))
             }
         }
