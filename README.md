@@ -20,8 +20,9 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
   - **Volume normalization** that evens out loudness between tracks (a slow automatic gain control with a soft limiter, applied in real time)
   - **Bass boost** from 0 to +15 dB, adjustable while a song is playing (also available right in the player)
   - **12-band equalizer** (32 Hz to 16 kHz, ±12 dB) with two modes:
-    - *All tracks*: one curve applies to every track
-    - *Per track*: every track remembers its own curve permanently (stored on the device)
+    - *All tracks*: one curve applies to every track; it can be edited both in Settings and in the player
+    - *Per track*: every track remembers its own curve permanently (stored on the device); in this mode the curves can be edited only in the player, and the Settings sliders are locked
+    - The mode is chosen in Settings only; the player's equalizer screen has no mode switch and explains which mode is active
   - Bass boost and the equalizer are mutually exclusive: bass boost can be enabled only while the equalizer is off, and the equalizer can be enabled only while bass boost is off. Switching modes never erases saved curves.
 - **Smooth animations** for screen transitions, tab switching, the full-screen player, and list changes.
 - Supported formats: MP3, FLAC, OGG/Opus, M4A/AAC, WAV, and other formats supported by Android.

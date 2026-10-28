@@ -29,6 +29,8 @@ import java.util.UUID
 sealed interface Screen {
     data object Settings : Screen
     data object Equalizer : Screen
+    /** Экран эквалайзера, открытый из плеера: без переключения режимов. */
+    data object PlayerEqualizer : Screen
     data object Player : Screen
     data class AlbumScreen(val key: String) : Screen
     data class PlaylistScreen(val id: String) : Screen
@@ -97,15 +99,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** Счётчик, который увеличивается при любом изменении кривых треков или смене текущего трека. */
     private var trackRev by mutableIntStateOf(0)
 
-    /** Кривая, которую показывает экран эквалайзера: общая в режиме «для всех», кривая текущего трека в режиме «для каждого». */
-    val editableGains: List<Float>
+    /** В настройках ползунки активны только в режиме «для всех треков». В режиме «для каждого трека» они заблокированы. */
+    val canEditInSettings: Boolean
+        get() = eqMode == EqMode.GLOBAL
+
+    /** Кривая, которую показывает эквалайзер в плеере: общая или кривая текущего трека, в зависимости от режима. */
+    val playerGains: List<Float>
         get() = when (eqMode) {
             EqMode.PER_TRACK -> trackRev.let { AudioFx.trackGainsFor(currentId).toList() }
             else -> globalGains
         }
 
-    /** Можно ли сейчас двигать полосы. */
-    val canEditEq: Boolean
+    /** В плеере ползунки активны в обоих режимах (для режима «для каждого трека» нужен играющий трек). */
+    val canEditInPlayer: Boolean
         get() = when (eqMode) {
             EqMode.OFF -> false
             EqMode.GLOBAL -> true
@@ -138,7 +144,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         AudioFx.refresh()
     }
 
-    fun setEqBand(band: Int, db: Float) {
+    fun setEqBand(band: Int, db: Float, fromPlayer: Boolean) {
         val v = db.coerceIn(-AudioFx.EQ_RANGE_DB, AudioFx.EQ_RANGE_DB)
         when (eqMode) {
             EqMode.GLOBAL -> {
@@ -146,6 +152,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 globalGains = AudioFx.globalGains.toList()
             }
             EqMode.PER_TRACK -> {
+                if (!fromPlayer) return // кривые отдельных треков меняются только из плеера
                 val id = currentId ?: return
                 AudioFx.setTrackBand(id, band, v)
                 trackRev++
@@ -154,15 +161,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun resetEq() {
+    fun resetEq(fromPlayer: Boolean) {
         when (eqMode) {
             EqMode.GLOBAL -> {
                 AudioFx.resetGlobal()
                 globalGains = AudioFx.globalGains.toList()
             }
-            EqMode.PER_TRACK -> currentId?.let {
-                AudioFx.resetTrack(it)
-                trackRev++
+            EqMode.PER_TRACK -> {
+                if (!fromPlayer) return
+                currentId?.let {
+                    AudioFx.resetTrack(it)
+                    trackRev++
+                }
             }
             EqMode.OFF -> Unit
         }
@@ -175,10 +185,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         AudioFx.persistTracks()
     }
 
-    /** Из плеера переходим на экран эквалайзера: плеер закрывается, экран эквалайзера открывается под ним. */
-    fun openEqualizerFromPlayer() {
-        if (screen == Screen.Player) pop()
-        if (screen != Screen.Equalizer) push(Screen.Equalizer)
+    /** Эквалайзер из плеера открывается поверх плеера; кнопка «Назад» возвращает в плеер. */
+    fun openPlayerEqualizer() {
+        if (screen != Screen.PlayerEqualizer) push(Screen.PlayerEqualizer)
     }
 
     // ---------- Навигация ----------

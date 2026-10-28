@@ -168,9 +168,10 @@ private fun screenTransition(from: NavState, to: NavState): ContentTransform =
 @Composable
 fun App(vm: PlayerViewModel) {
     // Полноэкранный плеер живёт отдельным слоем поверх всего приложения и не входит в обычную навигацию.
-    val playerOpen = vm.screen == Screen.Player
-    val base = vm.stack.lastOrNull { it !is Screen.Player }
-    val depth = vm.stack.count { it !is Screen.Player }
+    val playerOpen = Screen.Player in vm.stack
+    val playerEqOpen = vm.screen == Screen.PlayerEqualizer
+    val base = vm.stack.lastOrNull { it !is Screen.Player && it !is Screen.PlayerEqualizer }
+    val depth = vm.stack.count { it !is Screen.Player && it !is Screen.PlayerEqualizer }
 
     BackHandler(enabled = vm.screen != null) { vm.pop() }
 
@@ -206,8 +207,8 @@ fun App(vm: PlayerViewModel) {
                         when (val s = state.screen) {
                             null -> LibraryScreen(vm) { folderPicker.launch(null) }
                             Screen.Settings -> SettingsScreen(vm) { folderPicker.launch(null) }
-                            Screen.Equalizer -> EqualizerScreen(vm)
-                            Screen.Player -> Unit // плеер рисуется отдельным слоем ниже
+                            Screen.Equalizer -> EqualizerScreen(vm, fromPlayer = false)
+                            Screen.Player, Screen.PlayerEqualizer -> Unit // рисуются отдельными слоями ниже
                             is Screen.AlbumScreen -> AlbumScreen(vm, s.key)
                             is Screen.PlaylistScreen -> PlaylistScreen(vm, s.id)
                         }
@@ -223,6 +224,15 @@ fun App(vm: PlayerViewModel) {
             exit = slideOutVertically(tween(300)) { it },
         ) {
             PlayerScreen(vm)
+        }
+
+        // Эквалайзер из плеера выезжает справа поверх плеера. Кнопка «Назад» возвращает в плеер.
+        AnimatedVisibility(
+            visible = playerEqOpen,
+            enter = slideInHorizontally(tween(300)) { it },
+            exit = slideOutHorizontally(tween(250)) { it },
+        ) {
+            PlayerEqualizerScreen(vm)
         }
     }
 
@@ -255,7 +265,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
         null -> "Моя музыка"
         Screen.Settings -> "Настройки"
         Screen.Equalizer -> "Эквалайзер"
-        Screen.Player -> "" // плеер имеет собственную шапку и сюда не попадает
+        Screen.Player, Screen.PlayerEqualizer -> "" // у экранов плеера собственная шапка, сюда они не попадают
         is Screen.AlbumScreen -> vm.albums.find { it.key == screen.key }?.name ?: ""
         is Screen.PlaylistScreen -> vm.playlists.find { it.id == screen.id }?.name ?: ""
     }
@@ -738,7 +748,7 @@ private fun SoundPanel(vm: PlayerViewModel) {
     Surface(tonalElevation = 2.dp, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             BassControl(vm)
-            TextButton(onClick = { vm.openEqualizerFromPlayer() }) {
+            TextButton(onClick = { vm.openPlayerEqualizer() }) {
                 Icon(Icons.Default.Equalizer, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Эквалайзер: ${eqModeLabel(vm.eqMode)}")
@@ -991,42 +1001,75 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
 // Эквалайзер
 // =====================================================================
 
+/**
+ * Экран эквалайзера. Открывается из настроек (fromPlayer = false) и из плеера (fromPlayer = true).
+ *
+ *  - Из настроек: можно выбирать режим. Ползунки активны только в режиме «для всех треков».
+ *    В режиме «для каждого трека» они заблокированы (показывается сохранённая общая настройка).
+ *  - Из плеера: режим переключать нельзя. Ползунки активны и в режиме «для всех треков» (меняется общая кривая),
+ *    и в режиме «для каждого трека» (меняется кривая играющего трека).
+ */
 @Composable
-private fun EqualizerScreen(vm: PlayerViewModel) {
-    val gains = vm.editableGains
-    val editable = vm.canEditEq
+private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
+    val gains = if (fromPlayer) vm.playerGains else vm.globalGains
+    val editable = if (fromPlayer) vm.canEditInPlayer else vm.canEditInSettings
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Text(
-            "Режим",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-        )
-        EqModeRow(vm, EqMode.OFF, "Выключен", "Звук без обработки")
-        EqModeRow(vm, EqMode.GLOBAL, "Для всех треков", "Одна настройка действует на все треки")
-        EqModeRow(vm, EqMode.PER_TRACK, "Для каждого трека", "Своя настройка у каждого трека, запоминается навсегда")
-        if (vm.bassEnabled) {
+        if (!fromPlayer) {
             Text(
-                "Чтобы включить эквалайзер, сначала отключите усиление басов (в настройках или на экране плеера).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                "Режим",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
             )
+            EqModeRow(vm, EqMode.OFF, "Выключен", "Звук без обработки")
+            EqModeRow(vm, EqMode.GLOBAL, "Для всех треков", "Одна настройка действует на все треки")
+            EqModeRow(vm, EqMode.PER_TRACK, "Для каждого трека", "Своя настройка у каждого трека, запоминается навсегда")
+            if (vm.bassEnabled) {
+                Text(
+                    "Чтобы включить эквалайзер, сначала отключите усиление басов (в настройках или на экране плеера).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        } else {
+            Spacer(Modifier.height(8.dp))
         }
 
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-        Text(
-            when (vm.eqMode) {
-                EqMode.OFF -> "Эквалайзер выключен. Выберите режим выше, чтобы настроить звук."
-                EqMode.GLOBAL -> "Настройка действует на все треки"
-                EqMode.PER_TRACK -> vm.currentTrack?.let { "Настройка для трека: ${it.title}" }
-                    ?: "Запустите трек, чтобы настроить его звук"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        // Пояснение к текущему режиму: что именно сейчас меняют ползунки
+        val note = when (vm.eqMode) {
+            EqMode.OFF ->
+                if (fromPlayer) {
+                    if (vm.bassEnabled) "Эквалайзер недоступен, пока включено усиление басов. Выключите басы, затем выберите режим эквалайзера в настройках."
+                    else "Эквалайзер выключен. Включить его и выбрать режим можно в настройках."
+                } else {
+                    "Эквалайзер выключен. Выберите режим выше, чтобы настроить звук."
+                }
+            EqMode.GLOBAL ->
+                if (fromPlayer) "Включён режим «для всех треков»: изменения действуют на все треки. Сменить режим можно в настройках."
+                else "Режим «для всех треков»: настройка действует на все треки. Её можно менять и в плеере."
+            EqMode.PER_TRACK ->
+                if (fromPlayer) {
+                    vm.currentTrack?.let { "Включён режим «для каждого трека». Настройка относится к треку «${it.title}» и запоминается." }
+                        ?: "Включён режим «для каждого трека». Запустите трек, чтобы настроить его звук."
+                } else {
+                    "Режим «для каждого трека»: здесь настройка заблокирована. Менять звук можно только в плеере, отдельно для каждого трека. " +
+                        "Ниже показана общая настройка: она сохранена, но сейчас не действует."
+                }
+        }
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        ) {
+            Text(
+                note,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(12.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
 
         // 12 вертикальных ползунков
@@ -1041,7 +1084,7 @@ private fun EqualizerScreen(vm: PlayerViewModel) {
                     BandSlider(
                         value = gains[i],
                         enabled = editable,
-                        onChange = { vm.setEqBand(i, it) },
+                        onChange = { vm.setEqBand(i, it, fromPlayer) },
                         onFinish = { vm.commitSound() },
                         modifier = Modifier.fillMaxWidth().height(200.dp),
                     )
@@ -1059,7 +1102,7 @@ private fun EqualizerScreen(vm: PlayerViewModel) {
 
         Spacer(Modifier.height(12.dp))
         OutlinedButton(
-            onClick = { vm.resetEq() },
+            onClick = { vm.resetEq(fromPlayer) },
             enabled = editable,
             modifier = Modifier.padding(horizontal = 16.dp),
         ) {
@@ -1080,6 +1123,28 @@ private fun EqualizerScreen(vm: PlayerViewModel) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** Эквалайзер, открытый из плеера: своя шапка со стрелкой «Назад» (возвращает в плеер) и без выбора режима. */
+@Composable
+private fun PlayerEqualizerScreen(vm: PlayerViewModel) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { vm.pop() }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                }
+                Text(
+                    "Эквалайзер",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                EqualizerScreen(vm, fromPlayer = true)
+            }
+        }
     }
 }
 
