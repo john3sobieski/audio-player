@@ -25,6 +25,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -85,6 +87,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -100,6 +103,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -126,6 +130,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 // =====================================================================
 // Анимации переходов
@@ -200,7 +206,7 @@ fun App(vm: PlayerViewModel) {
                         when (val s = state.screen) {
                             null -> LibraryScreen(vm) { folderPicker.launch(null) }
                             Screen.Settings -> SettingsScreen(vm) { folderPicker.launch(null) }
-                            Screen.Equalizer -> EqualizerScreen()
+                            Screen.Equalizer -> EqualizerScreen(vm)
                             Screen.Player -> Unit // плеер рисуется отдельным слоем ниже
                             is Screen.AlbumScreen -> AlbumScreen(vm, s.key)
                             is Screen.PlaylistScreen -> PlaylistScreen(vm, s.id)
@@ -690,11 +696,12 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
+            // Содержимое прокручивается: на небольших экранах панель звука не помещается рядом с обложкой
             Column(
-                Modifier.weight(1f).fillMaxWidth(),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
             ) {
+                Spacer(Modifier.height(8.dp))
                 Cover(t?.uri, PLAYER_COVER_SIZE)
                 Spacer(Modifier.height(24.dp))
                 AnimatedContent(
@@ -717,9 +724,71 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                 SeekBar(vm, t?.durationMs ?: 0L)
                 Spacer(Modifier.height(8.dp))
                 PlayerControls(vm)
+                Spacer(Modifier.height(16.dp))
+                SoundPanel(vm)
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
+}
+
+/** Быстрые настройки звука прямо в плеере: усиление басов (можно менять во время прослушивания) и переход к эквалайзеру. */
+@Composable
+private fun SoundPanel(vm: PlayerViewModel) {
+    Surface(tonalElevation = 2.dp, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            BassControl(vm)
+            TextButton(onClick = { vm.openEqualizerFromPlayer() }) {
+                Icon(Icons.Default.Equalizer, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Эквалайзер: ${eqModeLabel(vm.eqMode)}")
+            }
+        }
+    }
+}
+
+/**
+ * Усиление басов: переключатель и ползунок 0...+15 дБ. Используется и в плеере, и в настройках.
+ * Доступно только при выключенном эквалайзере.
+ */
+@Composable
+private fun BassControl(vm: PlayerViewModel, modifier: Modifier = Modifier) {
+    val available = vm.eqMode == EqMode.OFF
+    Column(modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Усиление басов", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    when {
+                        !available -> "Недоступно: сначала выключите эквалайзер"
+                        vm.bassEnabled -> "+${vm.bassDb.roundToInt()} дБ"
+                        else -> "Выключено"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = vm.bassEnabled,
+                onCheckedChange = { vm.changeBassEnabled(it) },
+                enabled = available,
+            )
+        }
+        Slider(
+            value = vm.bassDb,
+            onValueChange = { vm.changeBassDb(it) },
+            onValueChangeFinished = { vm.commitSound() },
+            valueRange = 0f..AudioFx.BASS_MAX_DB,
+            steps = AudioFx.BASS_MAX_DB.toInt() - 1,
+            enabled = available && vm.bassEnabled,
+        )
+    }
+}
+
+private fun eqModeLabel(mode: EqMode): String = when (mode) {
+    EqMode.OFF -> "выключен"
+    EqMode.GLOBAL -> "для всех треков"
+    EqMode.PER_TRACK -> "для каждого трека"
 }
 
 /**
@@ -766,7 +835,7 @@ private fun SeekBar(vm: PlayerViewModel, durationMs: Long) {
                     }
                 }
                 .pointerInput(total) {
-                    detectDragGestures(
+                    detectHorizontalDragGestures(
                         onDragStart = { offset -> dragFraction = (offset.x / size.width).coerceIn(0f, 1f) },
                         onDragEnd = {
                             dragFraction?.let { f ->
@@ -897,21 +966,12 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             checked = vm.normalizeEnabled,
             onChange = { vm.changeNormalize(it) },
         )
+        BassControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         ListItem(
             modifier = Modifier.clickable { vm.push(Screen.Equalizer) },
             leadingContent = { Icon(Icons.Default.Equalizer, null) },
             headlineContent = { Text("Эквалайзер") },
-            supportingContent = { Text("Настройка частот звучания") },
-            trailingContent = {
-                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer) {
-                    Text(
-                        "Скоро",
-                        Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                }
-            },
+            supportingContent = { Text("12 полос · режим: ${eqModeLabel(vm.eqMode)}") },
         )
         Spacer(Modifier.height(16.dp))
     }
@@ -928,46 +988,187 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
 }
 
 // =====================================================================
-// Эквалайзер (заглушка)
+// Эквалайзер
 // =====================================================================
 
 @Composable
-private fun EqualizerScreen() {
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(24.dp))
-        Icon(Icons.Default.Equalizer, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(12.dp))
-        Text("Эквалайзер", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
+private fun EqualizerScreen(vm: PlayerViewModel) {
+    val gains = vm.editableGains
+    val editable = vm.canEditEq
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Text(
-            "Появится в одном из следующих обновлений.",
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "Режим",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
         )
-        Spacer(Modifier.height(32.dp))
-        // Неактивный макет будущего эквалайзера
-        Row(
-            Modifier.fillMaxWidth().height(200.dp).alpha(0.4f),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            listOf("60", "230", "910", "3,6к", "14к").forEach { label ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.weight(1f).width(24.dp), contentAlignment = Alignment.Center) {
-                        Box(
-                            Modifier.fillMaxHeight().width(6.dp).clip(RoundedCornerShape(3.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                        )
-                        Box(Modifier.size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(label, style = MaterialTheme.typography.labelSmall)
+        EqModeRow(vm, EqMode.OFF, "Выключен", "Звук без обработки")
+        EqModeRow(vm, EqMode.GLOBAL, "Для всех треков", "Одна настройка действует на все треки")
+        EqModeRow(vm, EqMode.PER_TRACK, "Для каждого трека", "Своя настройка у каждого трека, запоминается навсегда")
+        if (vm.bassEnabled) {
+            Text(
+                "Чтобы включить эквалайзер, сначала отключите усиление басов (в настройках или на экране плеера).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        Text(
+            when (vm.eqMode) {
+                EqMode.OFF -> "Эквалайзер выключен. Выберите режим выше, чтобы настроить звук."
+                EqMode.GLOBAL -> "Настройка действует на все треки"
+                EqMode.PER_TRACK -> vm.currentTrack?.let { "Настройка для трека: ${it.title}" }
+                    ?: "Запустите трек, чтобы настроить его звук"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+
+        // 12 вертикальных ползунков
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+            for (i in 0 until AudioFx.BANDS) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        formatDb(gains[i]),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (editable) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    BandSlider(
+                        value = gains[i],
+                        enabled = editable,
+                        onChange = { vm.setEqBand(i, it) },
+                        onFinish = { vm.commitSound() },
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                    )
+                    Text(AudioFx.BAND_LABELS[i], style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
+        Text(
+            "Гц · диапазон ±12 дБ",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = { vm.resetEq() },
+            enabled = editable,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        ) {
+            Text(if (vm.eqMode == EqMode.PER_TRACK) "Сбросить этот трек" else "Сбросить")
+        }
+        if (vm.eqMode == EqMode.PER_TRACK) {
+            Text(
+                "Треков с собственной настройкой: ${vm.customTrackCount}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        Text(
+            "Настройки каждого режима хранятся отдельно и не стираются при переключении.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        Spacer(Modifier.height(24.dp))
     }
+}
+
+@Composable
+private fun EqModeRow(vm: PlayerViewModel, mode: EqMode, title: String, subtitle: String) {
+    // Любой режим эквалайзера недоступен, пока включены басы
+    val blocked = mode != EqMode.OFF && vm.bassEnabled
+    ListItem(
+        modifier = Modifier
+            .alpha(if (blocked) 0.5f else 1f)
+            .clickable(enabled = !blocked) { vm.changeEqMode(mode) },
+        leadingContent = { RadioButton(selected = vm.eqMode == mode, onClick = null, enabled = !blocked) },
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+    )
+}
+
+/**
+ * Вертикальный ползунок одной полосы эквалайзера (−12...+12 дБ, шаг 0,5 дБ).
+ * Рисуется напрямую в Canvas, чтобы 12 ползунков работали быстро.
+ */
+@Composable
+private fun BandSlider(
+    value: Float,
+    enabled: Boolean,
+    onChange: (Float) -> Unit,
+    onFinish: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val changeNow by rememberUpdatedState(onChange)
+    val finishNow by rememberUpdatedState(onFinish)
+    val range = AudioFx.EQ_RANGE_DB
+    val activeColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val zeroColor = MaterialTheme.colorScheme.outline
+
+    fun yToValue(y: Float, height: Float, pad: Float): Float {
+        val h = (height - 2 * pad).coerceAtLeast(1f)
+        val frac = ((y - pad) / h).coerceIn(0f, 1f)
+        val v = range - frac * 2 * range
+        return Math.round(v * 2) / 2f
+    }
+
+    Box(
+        modifier
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                val pad = 12.dp.toPx()
+                detectTapGestures { offset ->
+                    changeNow(yToValue(offset.y, size.height.toFloat(), pad))
+                    finishNow()
+                }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                val pad = 12.dp.toPx()
+                detectVerticalDragGestures(
+                    onDragStart = { offset -> changeNow(yToValue(offset.y, size.height.toFloat(), pad)) },
+                    onDragEnd = { finishNow() },
+                    onDragCancel = { finishNow() },
+                ) { change, _ ->
+                    change.consume()
+                    changeNow(yToValue(change.position.y, size.height.toFloat(), pad))
+                }
+            }
+            .drawBehind {
+                val pad = 12.dp.toPx()
+                val h = size.height - 2 * pad
+                val cx = size.width / 2
+                val trackW = 4.dp.toPx()
+                val corner = CornerRadius(trackW / 2)
+                val y0 = pad + range / (2 * range) * h
+                val y1 = pad + (range - value) / (2 * range) * h
+
+                drawRoundRect(trackColor, Offset(cx - trackW / 2, pad), Size(trackW, h), corner)
+                drawLine(zeroColor, Offset(cx - 8.dp.toPx(), y0), Offset(cx + 8.dp.toPx(), y0), strokeWidth = 1.dp.toPx())
+                drawRoundRect(
+                    activeColor, Offset(cx - trackW / 2, minOf(y0, y1)),
+                    Size(trackW, abs(y1 - y0)), corner,
+                )
+                drawCircle(activeColor, 9.dp.toPx(), Offset(cx, y1))
+            },
+    )
+}
+
+private fun formatDb(v: Float): String = when {
+    v == 0f -> "0"
+    v % 1f == 0f -> "%+d".format(v.toInt())
+    else -> "%+.1f".format(v)
 }
 
 // =====================================================================

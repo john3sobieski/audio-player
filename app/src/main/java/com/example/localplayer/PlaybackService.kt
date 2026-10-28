@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -48,6 +50,14 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+
+        // Режим «эквалайзер для каждого трека»: при смене трека подставляем его кривую.
+        // Делаем это здесь, в сервисе, чтобы работало и при закрытом интерфейсе приложения.
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                AudioFx.setCurrentUri(mediaItem?.mediaId?.takeIf { it.isNotEmpty() })
+            }
+        })
 
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),

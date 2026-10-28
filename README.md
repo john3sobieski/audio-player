@@ -18,7 +18,11 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 - **Sound settings:**
   - **Mono / stereo** switch
   - **Volume normalization** that evens out loudness between tracks (a slow automatic gain control with a soft limiter, applied in real time)
-  - **Equalizer** (placeholder, coming soon)
+  - **Bass boost** from 0 to +15 dB, adjustable while a song is playing (also available right in the player)
+  - **12-band equalizer** (32 Hz to 16 kHz, ±12 dB) with two modes:
+    - *All tracks*: one curve applies to every track
+    - *Per track*: every track remembers its own curve permanently (stored on the device)
+  - Bass boost and the equalizer are mutually exclusive: bass boost can be enabled only while the equalizer is off, and the equalizer can be enabled only while bass boost is off. Switching modes never erases saved curves.
 - **Smooth animations** for screen transitions, tab switching, the full-screen player, and list changes.
 - Supported formats: MP3, FLAC, OGG/Opus, M4A/AAC, WAV, and other formats supported by Android.
 - Material 3 design with dynamic colors on Android 12+ and light/dark theme support.
@@ -81,7 +85,7 @@ app/src/main/java/com/example/localplayer/
 ├── PlayerViewModel.kt     # App state, playlists, player control
 ├── Library.kt             # Folder scanning, metadata cache, playlist storage
 ├── PlaybackService.kt     # Background playback (Media3 MediaSessionService)
-├── AudioFx.kt             # Real-time audio processor: mono mix and volume normalization
+├── AudioFx.kt             # Sound settings storage + real-time audio processor (mono, normalization, 12-band EQ, bass boost)
 └── Models.kt              # Track / Album / Playlist data classes
 ```
 

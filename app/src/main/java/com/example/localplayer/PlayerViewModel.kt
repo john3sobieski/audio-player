@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -72,13 +73,112 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun changeMono(value: Boolean) {
         monoEnabled = value
         AudioFx.mono = value
-        AudioFx.save(getApplication())
+        AudioFx.persistSettings()
     }
 
     fun changeNormalize(value: Boolean) {
         normalizeEnabled = value
         AudioFx.normalize = value
-        AudioFx.save(getApplication())
+        AudioFx.persistSettings()
+    }
+
+    // ---------- Усиление басов и эквалайзер ----------
+    // Правила: басы включаются только при выключенном эквалайзере, а эквалайзер (любой режим) только при выключенных басах.
+
+    var eqMode by mutableStateOf(EqMode.OFF)
+        private set
+    var bassEnabled by mutableStateOf(false)
+        private set
+    var bassDb by mutableFloatStateOf(6f)
+        private set
+    var globalGains by mutableStateOf(List(AudioFx.BANDS) { 0f })
+        private set
+
+    /** Счётчик, который увеличивается при любом изменении кривых треков или смене текущего трека. */
+    private var trackRev by mutableIntStateOf(0)
+
+    /** Кривая, которую показывает экран эквалайзера: общая в режиме «для всех», кривая текущего трека в режиме «для каждого». */
+    val editableGains: List<Float>
+        get() = when (eqMode) {
+            EqMode.PER_TRACK -> trackRev.let { AudioFx.trackGainsFor(currentId).toList() }
+            else -> globalGains
+        }
+
+    /** Можно ли сейчас двигать полосы. */
+    val canEditEq: Boolean
+        get() = when (eqMode) {
+            EqMode.OFF -> false
+            EqMode.GLOBAL -> true
+            EqMode.PER_TRACK -> currentId != null
+        }
+
+    val customTrackCount: Int get() = trackRev.let { AudioFx.customTrackCount() }
+
+    fun changeEqMode(mode: EqMode) {
+        if (mode != EqMode.OFF && bassEnabled) return // сначала нужно отключить басы
+        eqMode = mode
+        AudioFx.eqMode = mode
+        AudioFx.refresh()
+        AudioFx.persistSettings()
+        trackRev++
+    }
+
+    fun changeBassEnabled(value: Boolean) {
+        if (value && eqMode != EqMode.OFF) return // сначала нужно выключить эквалайзер
+        bassEnabled = value
+        AudioFx.bassEnabled = value
+        AudioFx.refresh()
+        AudioFx.persistSettings()
+    }
+
+    /** Меняется «вживую» во время перетаскивания ползунка; сохраняется в [commitSound]. */
+    fun changeBassDb(value: Float) {
+        bassDb = value
+        AudioFx.bassLevel = value
+        AudioFx.refresh()
+    }
+
+    fun setEqBand(band: Int, db: Float) {
+        val v = db.coerceIn(-AudioFx.EQ_RANGE_DB, AudioFx.EQ_RANGE_DB)
+        when (eqMode) {
+            EqMode.GLOBAL -> {
+                AudioFx.setGlobalBand(band, v)
+                globalGains = AudioFx.globalGains.toList()
+            }
+            EqMode.PER_TRACK -> {
+                val id = currentId ?: return
+                AudioFx.setTrackBand(id, band, v)
+                trackRev++
+            }
+            EqMode.OFF -> Unit
+        }
+    }
+
+    fun resetEq() {
+        when (eqMode) {
+            EqMode.GLOBAL -> {
+                AudioFx.resetGlobal()
+                globalGains = AudioFx.globalGains.toList()
+            }
+            EqMode.PER_TRACK -> currentId?.let {
+                AudioFx.resetTrack(it)
+                trackRev++
+            }
+            EqMode.OFF -> Unit
+        }
+        commitSound()
+    }
+
+    /** Записывает настройки на диск (вызывается, когда пользователь отпустил ползунок). */
+    fun commitSound() {
+        AudioFx.persistSettings()
+        AudioFx.persistTracks()
+    }
+
+    /** Из плеера переходим на экран эквалайзера: плеер закрывается, экран эквалайзера открывается под ним. */
+    fun openEqualizerFromPlayer() {
+        if (screen == Screen.Player) pop()
+        if (screen != Screen.Equalizer) push(Screen.Equalizer)
     }
 
     // ---------- Навигация ----------
@@ -122,6 +222,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         override fun onIsPlayingChanged(isPlaying: Boolean) { this@PlayerViewModel.isPlaying = isPlaying }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             currentId = mediaItem?.mediaId?.takeIf { it.isNotEmpty() }
+            AudioFx.setCurrentUri(currentId)
+            trackRev++
         }
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { shuffle = shuffleModeEnabled }
         override fun onRepeatModeChanged(repeatMode: Int) { repeat = repeatMode }
@@ -134,6 +236,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         AudioFx.load(app)
         monoEnabled = AudioFx.mono
         normalizeEnabled = AudioFx.normalize
+        eqMode = AudioFx.eqMode
+        bassEnabled = AudioFx.bassEnabled
+        bassDb = AudioFx.bassLevel
+        globalGains = AudioFx.globalGains.toList()
 
         playlists = library.loadPlaylists()
         connectPlayer()
@@ -163,6 +269,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 c.addListener(listener)
                 isPlaying = c.isPlaying
                 currentId = c.currentMediaItem?.mediaId?.takeIf { it.isNotEmpty() }
+                AudioFx.setCurrentUri(currentId)
+                trackRev++
                 shuffle = c.shuffleModeEnabled
                 repeat = c.repeatMode
             } catch (_: Exception) {
