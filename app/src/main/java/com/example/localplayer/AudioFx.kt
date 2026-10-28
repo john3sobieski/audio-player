@@ -108,6 +108,9 @@ object AudioFx {
 
     private val trackGains = HashMap<String, FloatArray>()
 
+    /** Треки, к которым НЕ применяется общая кривая: в режиме «для всех треков» они играют со своей собственной кривой. */
+    private val globalExcluded = HashSet<String>()
+
     @Volatile var currentUri: String? = null
         private set
 
@@ -135,6 +138,7 @@ object AudioFx {
         subEnabled = p.getBoolean("sub_enabled", false)
         subLevel = p.getFloat("sub_level", 50f).coerceIn(0f, SUB_MAX)
         globalGains = parseGains(p.getString("eq_global", null))
+        p.getStringSet("eq_global_excluded", null)?.let { globalExcluded.addAll(it) }
 
         try {
             val f = File(app.filesDir, TRACKS_FILE)
@@ -164,6 +168,7 @@ object AudioFx {
             ?.putBoolean("sub_enabled", subEnabled)
             ?.putFloat("sub_level", subLevel)
             ?.putString("eq_global", globalGains.joinToString(","))
+            ?.putStringSet("eq_global_excluded", HashSet(globalExcluded))
             ?.apply()
     }
 
@@ -223,6 +228,14 @@ object AudioFx {
         refresh()
     }
 
+    /** Не применять общий эквалайзер к этому треку? */
+    fun isGlobalExcluded(uri: String?): Boolean = uri != null && key(uri) in globalExcluded
+
+    fun setGlobalExcluded(uri: String, excluded: Boolean) {
+        if (excluded) globalExcluded.add(key(uri)) else globalExcluded.remove(key(uri))
+        refresh()
+    }
+
     /** Сколько треков имеют собственную (не плоскую) кривую. */
     fun customTrackCount(): Int = trackGains.values.count { v -> v.any { it != 0f } }
 
@@ -230,7 +243,10 @@ object AudioFx {
     fun refresh() {
         gains = when (eqMode) {
             EqMode.OFF -> ZERO
-            EqMode.GLOBAL -> globalGains
+            EqMode.GLOBAL ->
+                // Трек, исключённый из общей настройки, играет со своей кривой (или без обработки, если её нет)
+                if (isGlobalExcluded(currentUri)) currentUri?.let { trackGains[key(it)] } ?: ZERO
+                else globalGains
             EqMode.PER_TRACK -> currentUri?.let { trackGains[key(it)] } ?: ZERO
         }
         bassDb = if (bassEnabled) bassLevel else 0f

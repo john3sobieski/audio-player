@@ -115,8 +115,22 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val playerGains: List<Float>
         get() = when (eqMode) {
             EqMode.PER_TRACK -> trackRev.let { AudioFx.trackGainsFor(currentId).toList() }
+            // Трек исключён из общей настройки: показываем и меняем его собственную кривую
+            EqMode.GLOBAL ->
+                if (currentExcludesGlobal) AudioFx.trackGainsFor(currentId).toList() else globalGains
             else -> globalGains
         }
+
+    /** Для играющего трека включено «не применять общий эквалайзер». */
+    val currentExcludesGlobal: Boolean
+        get() = trackRev.let { AudioFx.isGlobalExcluded(currentId) }
+
+    fun changeGlobalExcluded(value: Boolean) {
+        val id = currentId ?: return
+        AudioFx.setGlobalExcluded(id, value)
+        AudioFx.persistSettings()
+        trackRev++
+    }
 
     /** В плеере ползунки активны в обоих режимах (для режима «для каждого трека» нужен играющий трек). */
     val canEditInPlayer: Boolean
@@ -180,8 +194,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val v = db.coerceIn(-AudioFx.EQ_RANGE_DB, AudioFx.EQ_RANGE_DB)
         when (eqMode) {
             EqMode.GLOBAL -> {
-                AudioFx.setGlobalBand(band, v)
-                globalGains = AudioFx.globalGains.toList()
+                val id = currentId
+                if (fromPlayer && id != null && AudioFx.isGlobalExcluded(id)) {
+                    // Для этого трека общая настройка отключена: ползунки меняют его собственную кривую
+                    AudioFx.setTrackBand(id, band, v)
+                    trackRev++
+                } else {
+                    AudioFx.setGlobalBand(band, v)
+                    globalGains = AudioFx.globalGains.toList()
+                }
             }
             EqMode.PER_TRACK -> {
                 if (!fromPlayer) return // кривые отдельных треков меняются только из плеера
@@ -196,8 +217,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun resetEq(fromPlayer: Boolean) {
         when (eqMode) {
             EqMode.GLOBAL -> {
-                AudioFx.resetGlobal()
-                globalGains = AudioFx.globalGains.toList()
+                val id = currentId
+                if (fromPlayer && id != null && AudioFx.isGlobalExcluded(id)) {
+                    AudioFx.resetTrack(id)
+                    trackRev++
+                } else {
+                    AudioFx.resetGlobal()
+                    globalGains = AudioFx.globalGains.toList()
+                }
             }
             EqMode.PER_TRACK -> {
                 if (!fromPlayer) return

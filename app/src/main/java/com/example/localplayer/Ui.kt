@@ -30,6 +30,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -116,6 +118,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -470,6 +473,7 @@ private fun AlbumScreen(vm: PlayerViewModel, key: String) {
         vm = vm,
         header = "${album.artist} · ${album.tracks.size} ${plural(album.tracks.size)}",
         list = album.tracks,
+        showCovers = false, // внутри альбома обложка у всех треков одна и так видна в списке альбомов
         menuFor = { t -> listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }) },
     )
 }
@@ -494,6 +498,7 @@ private fun TrackListScreen(
     header: String,
     list: List<Track>,
     emptyText: String = "Нет треков",
+    showCovers: Boolean = true,
     menuFor: (Track) -> List<Pair<String, () -> Unit>>,
 ) {
     LazyColumn(Modifier.fillMaxSize()) {
@@ -513,7 +518,7 @@ private fun TrackListScreen(
         }
         if (list.isEmpty()) item { Text(emptyText, Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         itemsIndexed(list, key = { i, t -> "$i|${t.uri}" }) { i, t ->
-            TrackRow(t, vm.currentId == t.uri, { vm.play(list, i) }, menuFor(t), Modifier.animateItem())
+            TrackRow(t, vm.currentId == t.uri, { vm.play(list, i) }, menuFor(t), Modifier.animateItem(), showCover = showCovers)
         }
     }
 }
@@ -529,15 +534,32 @@ private fun TrackRow(
     onClick: () -> Unit,
     menu: List<Pair<String, () -> Unit>>,
     modifier: Modifier = Modifier,
+    showCover: Boolean = true,
 ) {
     val color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     ListItem(
         modifier = modifier.clickable(onClick = onClick),
         leadingContent = {
-            Icon(
-                if (current) Icons.Default.PlayArrow else Icons.Default.MusicNote, null,
-                tint = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (showCover) {
+                // Обложка трека (если есть; иначе нота), как в «Альбомах», но поменьше.
+                // У играющего трека поверх обложки показывается значок воспроизведения.
+                Box(Modifier.size(TRACK_COVER_SIZE), contentAlignment = Alignment.Center) {
+                    Cover(track.uri, TRACK_COVER_SIZE)
+                    if (current) {
+                        Box(
+                            Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.5f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            } else {
+                Icon(
+                    if (current) Icons.Default.PlayArrow else Icons.Default.MusicNote, null,
+                    tint = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         },
         headlineContent = { Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = color) },
         supportingContent = { Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -563,8 +585,14 @@ private fun RowMenu(items: List<Pair<String, () -> Unit>>) {
     }
 }
 
+/** Размер обложки в списках треков (меньше, чем 56 dp в «Альбомах»). */
+private val TRACK_COVER_SIZE = 44.dp
+
 /** Размер обложки в полноэкранном плеере. Мини-плеер декодирует обложку в том же размере, чтобы при открытии плеера она уже была в кэше. */
 private val PLAYER_COVER_SIZE = 280.dp
+
+/** Высота всего, что в плеере находится под обложкой (плашка, название, полоса прогресса, кнопки, панель звука) с запасом. Остальное отдаётся обложке. */
+private val PLAYER_CONTENT_RESERVE = 400.dp
 
 /** Не больше двух одновременных декодирований обложек, чтобы прокрутка списка не забивала процессор. */
 private val coverGate = Semaphore(2)
@@ -709,38 +737,44 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
-            // Содержимое прокручивается: на небольших экранах панель звука не помещается рядом с обложкой
-            Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                QualityBadge(t?.info)
-                Spacer(Modifier.height(12.dp))
-                Cover(t?.uri, PLAYER_COVER_SIZE)
-                Spacer(Modifier.height(24.dp))
-                AnimatedContent(
-                    targetState = t,
-                    transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
-                    label = "nowPlayingTitle",
-                ) { tr ->
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            tr?.title ?: "", style = MaterialTheme.typography.titleLarge,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                        )
-                        Text(
-                            tr?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
+            // Обложка растёт на высоких экранах, чтобы плеер занимал всю высоту без пустой полосы внизу.
+            // На низких экранах содержимое прокручивается: панель звука не помещается рядом с обложкой.
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val lo = minOf(PLAYER_COVER_SIZE, maxWidth)
+                val hi = maxOf(lo, maxWidth)
+                val coverSize = minOf(maxOf(maxHeight - PLAYER_CONTENT_RESERVE, lo), hi)
+                Column(
+                    Modifier.fillMaxWidth().heightIn(min = maxHeight).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    QualityBadge(t?.info)
+                    Spacer(Modifier.height(12.dp))
+                    Cover(t?.uri, coverSize)
+                    Spacer(Modifier.height(24.dp))
+                    AnimatedContent(
+                        targetState = t,
+                        transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+                        label = "nowPlayingTitle",
+                    ) { tr ->
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                tr?.title ?: "", style = MaterialTheme.typography.titleLarge,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                            )
+                            Text(
+                                tr?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
+                    Spacer(Modifier.height(16.dp))
+                    SeekBar(vm, t?.durationMs ?: 0L)
+                    Spacer(Modifier.height(8.dp))
+                    PlayerControls(vm)
+                    Spacer(Modifier.height(16.dp))
+                    SoundPanel(vm)
                 }
-                Spacer(Modifier.height(16.dp))
-                SeekBar(vm, t?.durationMs ?: 0L)
-                Spacer(Modifier.height(8.dp))
-                PlayerControls(vm)
-                Spacer(Modifier.height(16.dp))
-                SoundPanel(vm)
-                Spacer(Modifier.height(16.dp))
             }
         }
     }
@@ -776,7 +810,7 @@ private fun QualityBadge(info: AudioInfo?) {
 }
 
 /**
- * Быстрые настройки звука прямо в плеере: ряд кнопок «Басы», «Требл», «Subsonic», «EQ».
+ * Быстрые настройки звука прямо в плеере: ряд кнопок «Bass», «Treble», «Subsonic», «EQ».
  * Нажатие на первые три открывает окно с тем же переключателем и ползунком, что и в настройках;
  * «EQ» открывает эквалайзер. Включённые эффекты подсвечены.
  */
@@ -784,8 +818,8 @@ private fun QualityBadge(info: AudioInfo?) {
 private fun SoundPanel(vm: PlayerViewModel) {
     var dialog by remember { mutableStateOf<Int?>(null) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        SoundButton("Басы", vm.bassEnabled, Modifier.weight(1f)) { dialog = 0 }
-        SoundButton("Требл", vm.trebleEnabled, Modifier.weight(1f)) { dialog = 1 }
+        SoundButton("Bass", vm.bassEnabled, Modifier.weight(1f)) { dialog = 0 }
+        SoundButton("Treble", vm.trebleEnabled, Modifier.weight(1f)) { dialog = 1 }
         SoundButton("Subsonic", vm.subEnabled, Modifier.weight(1f)) { dialog = 2 }
         SoundButton("EQ", vm.eqMode != EqMode.OFF, Modifier.weight(1f)) { vm.openPlayerEqualizer() }
     }
@@ -1144,8 +1178,13 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
                     "Эквалайзер выключен. Выберите режим выше, чтобы настроить звук."
                 }
             EqMode.GLOBAL ->
-                if (fromPlayer) "Включён режим «для всех треков»: изменения действуют на все треки. Сменить режим можно в настройках."
-                else "Режим «для всех треков»: настройка действует на все треки. Её можно менять и в плеере."
+                if (fromPlayer) {
+                    if (vm.currentExcludesGlobal) {
+                        "Для этого трека общая настройка отключена: ползунки меняют только его собственную настройку, она запоминается."
+                    } else {
+                        "Включён режим «для всех треков»: изменения действуют на все треки. Сменить режим можно в настройках."
+                    }
+                } else "Режим «для всех треков»: настройка действует на все треки. Её можно менять и в плеере."
             EqMode.PER_TRACK ->
                 if (fromPlayer) {
                     vm.currentTrack?.let { "Включён режим «для каждого трека». Настройка относится к треку «${it.title}» и запоминается." }
@@ -1167,7 +1206,37 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
                 modifier = Modifier.padding(12.dp),
             )
         }
-        Spacer(Modifier.height(12.dp))
+
+        // Исключение текущего трека из общей настройки
+        if (fromPlayer && vm.eqMode != EqMode.OFF) {
+            val excluded = vm.currentExcludesGlobal
+            Spacer(Modifier.height(4.dp))
+            ListItem(
+                modifier = Modifier.clickable(enabled = vm.currentId != null) { vm.changeGlobalExcluded(!excluded) },
+                headlineContent = { Text("Не применять общий эквалайзер к этому треку") },
+                supportingContent = {
+                    Text(
+                        when {
+                            vm.eqMode == EqMode.PER_TRACK && excluded ->
+                                "Сработает в режиме «для всех треков»: трек будет играть только со своей настройкой"
+                            vm.eqMode == EqMode.PER_TRACK ->
+                                "Сейчас режим «для каждого трека»: можно включить заранее для режима «для всех треков»"
+                            excluded -> "Включено: на этот трек не влияет общая настройка"
+                            else -> "Выключено: трек играет с общей настройкой"
+                        },
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = excluded,
+                        onCheckedChange = { vm.changeGlobalExcluded(it) },
+                        enabled = vm.currentId != null,
+                    )
+                },
+            )
+        } else {
+            Spacer(Modifier.height(12.dp))
+        }
 
         // 12 вертикальных ползунков
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
