@@ -242,7 +242,7 @@ fun LazyItemScope.reorderableItem(state: ReorderState, key: Any): Modifier {
             fadeInSpec = null,
             fadeOutSpec = null,
             // У поднятой строки анимацию места отключаем: её положение задаёт палец
-            placementSpec = if (dragged) null else spring(
+            placementSpec = if (dragged || FastScroll.active) null else spring(
                 stiffness = Spring.StiffnessMediumLow,
                 visibilityThreshold = IntOffset.VisibilityThreshold,
             ),

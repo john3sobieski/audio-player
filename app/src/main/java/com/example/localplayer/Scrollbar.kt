@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -62,6 +63,11 @@ fun FastScrollContainer(
         content()
         FastScrollbar(state, headerCount, Modifier.matchParentSize())
     }
+}
+
+/** Идёт ли перетаскивание ползунка: на это время анимации строк (перемещение/появление) отключаются, иначе видны «призраки». */
+object FastScroll {
+    var active by mutableStateOf(false)
 }
 
 private val THUMB_TOUCH_WIDTH = 20.dp   // узкая зона у самого края: не мешает кнопке «⋮» в строках
@@ -101,6 +107,9 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
         label = "thumbAlpha",
     )
     val barWidth by animateDpAsState(if (dragging) 8.dp else 4.dp, tween(120), label = "thumbWidth")
+
+    LaunchedEffect(dragging) { FastScroll.active = dragging }
+    DisposableEffect(Unit) { onDispose { FastScroll.active = false } }
 
     // Пока тянем: положение ползунка/списка плавно догоняет палец
     LaunchedEffect(dragging) {

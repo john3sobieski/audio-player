@@ -611,7 +611,14 @@ private fun TrackListScreen(
         itemsIndexed(shown, key = { _, t -> t.uri }) { i, t ->
             TrackRow(
                 t, vm.currentId == t.uri, i + 1, { vm.play(shown, i) }, menuFor(t),
-                if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null),
+                if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(
+                    fadeInSpec = null,
+                    fadeOutSpec = null,
+                    placementSpec = if (FastScroll.active) null else androidx.compose.animation.core.spring(
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                        visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold,
+                    ),
+                ),
                 showCover = showCovers,
             )
         }
