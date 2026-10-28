@@ -114,12 +114,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -711,7 +713,8 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                 Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(8.dp))
+                QualityBadge(t?.info)
+                Spacer(Modifier.height(12.dp))
                 Cover(t?.uri, PLAYER_COVER_SIZE)
                 Spacer(Modifier.height(24.dp))
                 AnimatedContent(
@@ -737,6 +740,35 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                 Spacer(Modifier.height(16.dp))
                 SoundPanel(vm)
                 Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Скруглённая плашка над обложкой: формат и качество играющего трека («MP3 / 192 kbps», «FLAC / 24 Bit – 96 kHz»).
+ * Цвет зависит от «редкости» качества (см. [QualityTier]). Высота зарезервирована, чтобы обложка не прыгала при смене трека.
+ */
+@Composable
+private fun QualityBadge(info: AudioInfo?) {
+    Box(Modifier.height(28.dp), contentAlignment = Alignment.Center) {
+        AnimatedContent(
+            targetState = info?.takeIf { it.format.isNotEmpty() },
+            transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+            label = "qualityBadge",
+        ) { q ->
+            if (q != null) {
+                val tier = q.tier()
+                Text(
+                    q.label(),
+                    color = tier.fg,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .background(Brush.horizontalGradient(listOf(tier.from, tier.to)), RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 5.dp),
+                )
             }
         }
     }

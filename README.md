@@ -14,6 +14,7 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 - **Background playback** with a media notification, lock screen controls, and headset button support.
 - **Player controls:** play/pause, next/previous, seek, shuffle, repeat (off / all / one).
 - **Cover art** read from embedded tags.
+- **Quality badge** above the cover in the player: a rounded pill with the file format and quality (e.g. `MP3 / 192 kbps`, `FLAC / 24 Bit – 96 kHz`), colored by "rarity" like in games: light blue → green → blue (lossy), purple (CD-quality lossless), red (hi-res), gold (24 Bit / 176.4 kHz and above).
 - **Always up to date:** the folder is rescanned every time you open the app (or return to it), so added and deleted files show up automatically. Track metadata is cached, so rescans are fast.
 - **Sound settings:**
   - **Mono / stereo** switch

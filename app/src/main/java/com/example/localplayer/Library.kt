@@ -37,7 +37,7 @@ class Library(private val ctx: Context) {
 
     // ---------- Сканирование ----------
 
-    private class Entry(val uri: Uri, val name: String, val stamp: String)
+    private class Entry(val uri: Uri, val name: String, val stamp: String, val size: Long)
 
     suspend fun scan(tree: Uri): List<Track> = withContext(Dispatchers.IO) {
         val files = ArrayList<Entry>()
@@ -83,6 +83,7 @@ class Library(private val ctx: Context) {
                             DocumentsContract.buildDocumentUriUsingTree(tree, id),
                             name,
                             "${c.getLong(3)}|${c.getLong(4)}",
+                            c.getLong(4),
                         )
                     }
                 }
@@ -99,18 +100,26 @@ class Library(private val ctx: Context) {
             r.setDataSource(ctx, e.uri)
             fun m(k: Int) = r.extractMetadata(k)?.trim()?.takeIf { it.isNotEmpty() }
             val artist = m(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: NO_ARTIST
+            val duration = m(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val info = runCatching { AudioProbe.probe(ctx, e.uri, e.name, e.size, duration, r) }
+                .getOrDefault(AudioInfo())
             Track(
                 uri = e.uri.toString(),
                 title = m(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: fallbackTitle,
                 artist = artist,
                 albumArtist = m(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST) ?: artist,
                 album = m(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: NO_ALBUM,
-                durationMs = m(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L,
+                durationMs = duration,
                 trackNo = m(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
                     ?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0,
+                info = info,
             )
         } catch (_: Exception) {
-            Track(e.uri.toString(), fallbackTitle, NO_ARTIST, NO_ARTIST, NO_ALBUM, 0L, 0)
+            Track(
+                e.uri.toString(), fallbackTitle, NO_ARTIST, NO_ARTIST, NO_ALBUM, 0L, 0,
+                info = runCatching { AudioProbe.probe(ctx, e.uri, e.name, e.size, 0L, null) }
+                    .getOrDefault(AudioInfo()),
+            )
         } finally {
             runCatching { r.release() }
         }
@@ -129,6 +138,11 @@ class Library(private val ctx: Context) {
                         o.getString("uri"), o.getString("title"), o.getString("artist"),
                         o.getString("albumArtist"), o.getString("album"),
                         o.getLong("dur"), o.getInt("no"),
+                        // Нет поля «fmt» (кэш старой версии) — бросит исключение, и папка просканируется заново
+                        AudioInfo(
+                            o.getString("fmt"), o.getInt("kbps"), o.getInt("hz"),
+                            o.getInt("bits"), o.getBoolean("ll"),
+                        ),
                     ),
                 )
             }
@@ -145,7 +159,9 @@ class Library(private val ctx: Context) {
                     JSONObject()
                         .put("k", k).put("uri", t.uri).put("title", t.title).put("artist", t.artist)
                         .put("albumArtist", t.albumArtist).put("album", t.album)
-                        .put("dur", t.durationMs).put("no", t.trackNo),
+                        .put("dur", t.durationMs).put("no", t.trackNo)
+                        .put("fmt", t.info.format).put("kbps", t.info.bitrateKbps).put("hz", t.info.sampleRateHz)
+                        .put("bits", t.info.bitsPerSample).put("ll", t.info.lossless),
                 )
             }
             cacheFile.writeText(arr.toString())

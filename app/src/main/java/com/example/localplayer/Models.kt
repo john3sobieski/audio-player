@@ -8,6 +8,7 @@ data class Track(
     val album: String,
     val durationMs: Long,
     val trackNo: Int,
+    val info: AudioInfo = AudioInfo(),
 )
 
 data class Album(
