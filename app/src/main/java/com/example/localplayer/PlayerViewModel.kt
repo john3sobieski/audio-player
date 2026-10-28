@@ -88,6 +88,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun push(s: Screen) { stack.add(s) }
     fun pop() { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
 
+    /** Переход на вкладку библиотеки из любого экрана (нижняя навигация доступна везде). */
+    fun openTab(index: Int) {
+        tab = index
+        stack.clear()
+    }
+
+    fun openPlayer() {
+        if (screen != Screen.Player) push(Screen.Player)
+    }
+
     // ---------- Диалоги ----------
     var trackForPlaylist by mutableStateOf<Track?>(null)
     var newPlaylistDialog by mutableStateOf(false)

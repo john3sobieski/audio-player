@@ -1,8 +1,10 @@
 package com.example.localplayer
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.LruCache
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,7 +35,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -50,6 +54,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -93,6 +98,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -101,6 +107,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -117,32 +124,26 @@ import kotlinx.coroutines.withContext
 /** Экран + глубина стека: по глубине понимаем, идём мы «вперёд» или «назад». */
 private data class NavState(val screen: Screen?, val depth: Int)
 
-private fun screenTransition(from: NavState, to: NavState): ContentTransform = when {
-    // Полноэкранный плеер выезжает снизу и уезжает вниз
-    to.screen == Screen.Player && from.screen != Screen.Player ->
+/**
+ * Переходы между экранами сделаны «лёгкими»: полупрозрачным (а значит дорогим для отрисовки)
+ * бывает только входящий экран, а уходящий просто сдвигается. Так на кадр приходится
+ * один слой с прозрачностью вместо двух.
+ */
+private fun screenTransition(from: NavState, to: NavState): ContentTransform =
+    if (to.depth > from.depth) {
+        // Вперёд: новый экран выезжает справа поверх старого
         ContentTransform(
-            slideInVertically(tween(350)) { it } + fadeIn(tween(250)),
-            fadeOut(tween(250)),
-            targetContentZIndex = 1f,
+            slideInHorizontally(tween(300)) { it / 4 } + fadeIn(tween(250)),
+            slideOutHorizontally(tween(300)) { -it / 4 },
         )
-    from.screen == Screen.Player && to.screen != Screen.Player ->
+    } else {
+        // Назад: уходящий экран уезжает вправо, открывая предыдущий под ним
         ContentTransform(
-            fadeIn(tween(250)),
-            slideOutVertically(tween(300)) { it } + fadeOut(tween(250)),
+            slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(250)),
+            slideOutHorizontally(tween(300)) { it },
             targetContentZIndex = -1f,
         )
-    // Остальные экраны: небольшой сдвиг по горизонтали + затухание
-    to.depth > from.depth ->
-        ContentTransform(
-            slideInHorizontally(tween(300)) { it / 4 } + fadeIn(tween(300)),
-            slideOutHorizontally(tween(300)) { -it / 4 } + fadeOut(tween(200)),
-        )
-    else ->
-        ContentTransform(
-            slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(300)),
-            slideOutHorizontally(tween(300)) { it / 4 } + fadeOut(tween(200)),
-        )
-}
+    }
 
 // =====================================================================
 // Корень приложения
@@ -150,52 +151,62 @@ private fun screenTransition(from: NavState, to: NavState): ContentTransform = w
 
 @Composable
 fun App(vm: PlayerViewModel) {
-    val screen = vm.screen
-    BackHandler(enabled = screen != null) { vm.pop() }
+    // Полноэкранный плеер живёт отдельным слоем поверх всего приложения и не входит в обычную навигацию.
+    val playerOpen = vm.screen == Screen.Player
+    val base = vm.stack.lastOrNull { it !is Screen.Player }
+    val depth = vm.stack.count { it !is Screen.Player }
+
+    BackHandler(enabled = vm.screen != null) { vm.pop() }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.selectFolder(uri)
     }
 
-    Scaffold(
-        topBar = { TopBar(vm, screen) },
-        bottomBar = {
-            Column {
-                AnimatedVisibility(
-                    visible = vm.currentId != null && screen != Screen.Player,
-                    enter = slideInVertically(tween(250)) { it } + fadeIn(tween(250)),
-                    exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(200)),
-                ) {
-                    MiniPlayer(vm, bottomInset = screen != null)
-                }
-                AnimatedVisibility(
-                    visible = screen == null,
-                    enter = slideInVertically(tween(250)) { it } + fadeIn(tween(250)),
-                    exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(200)),
-                ) {
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = { TopBar(vm, base) },
+            bottomBar = {
+                // Высота нижних панелей не анимируется: иначе весь экран пересчитывает размеры на каждом кадре перехода
+                Column {
+                    AnimatedVisibility(
+                        visible = vm.currentId != null,
+                        enter = slideInVertically(tween(250)) { it },
+                        exit = slideOutVertically(tween(200)) { it },
+                    ) {
+                        MiniPlayer(vm)
+                    }
                     LibraryNavBar(vm)
                 }
-            }
-        },
-    ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
-            AnimatedContent(
-                targetState = NavState(screen, vm.stack.size),
-                transitionSpec = { screenTransition(initialState, targetState) },
-                label = "screens",
-            ) { state ->
-                // Непрозрачный фон, чтобы при переходе экраны не просвечивали друг через друга
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    when (val s = state.screen) {
-                        null -> LibraryScreen(vm) { folderPicker.launch(null) }
-                        Screen.Settings -> SettingsScreen(vm) { folderPicker.launch(null) }
-                        Screen.Equalizer -> EqualizerScreen()
-                        Screen.Player -> PlayerScreen(vm)
-                        is Screen.AlbumScreen -> AlbumScreen(vm, s.key)
-                        is Screen.PlaylistScreen -> PlaylistScreen(vm, s.id)
+            },
+        ) { pad ->
+            Box(Modifier.padding(pad).fillMaxSize()) {
+                AnimatedContent(
+                    targetState = NavState(base, depth),
+                    transitionSpec = { screenTransition(initialState, targetState) },
+                    label = "screens",
+                ) { state ->
+                    // Непрозрачный фон, чтобы при переходе экраны не просвечивали друг через друга
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        when (val s = state.screen) {
+                            null -> LibraryScreen(vm) { folderPicker.launch(null) }
+                            Screen.Settings -> SettingsScreen(vm) { folderPicker.launch(null) }
+                            Screen.Equalizer -> EqualizerScreen()
+                            Screen.Player -> Unit // плеер рисуется отдельным слоем ниже
+                            is Screen.AlbumScreen -> AlbumScreen(vm, s.key)
+                            is Screen.PlaylistScreen -> PlaylistScreen(vm, s.id)
+                        }
                     }
                 }
             }
+        }
+
+        // Плеер выезжает снизу поверх всего. Основной экран под ним не меняется и не перерисовывается.
+        AnimatedVisibility(
+            visible = playerOpen,
+            enter = slideInVertically(tween(350)) { it },
+            exit = slideOutVertically(tween(300)) { it },
+        ) {
+            PlayerScreen(vm)
         }
     }
 
@@ -228,7 +239,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
         null -> "Моя музыка"
         Screen.Settings -> "Настройки"
         Screen.Equalizer -> "Эквалайзер"
-        Screen.Player -> "Сейчас играет"
+        Screen.Player -> "" // плеер имеет собственную шапку и сюда не попадает
         is Screen.AlbumScreen -> vm.albums.find { it.key == screen.key }?.name ?: ""
         is Screen.PlaylistScreen -> vm.playlists.find { it.id == screen.id }?.name ?: ""
     }
@@ -263,15 +274,15 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
 private fun LibraryNavBar(vm: PlayerViewModel) {
     NavigationBar {
         NavigationBarItem(
-            selected = vm.tab == 0, onClick = { vm.tab = 0 },
+            selected = vm.tab == 0, onClick = { vm.openTab(0) },
             icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) }, label = { Text("Плейлисты") },
         )
         NavigationBarItem(
-            selected = vm.tab == 1, onClick = { vm.tab = 1 },
+            selected = vm.tab == 1, onClick = { vm.openTab(1) },
             icon = { Icon(Icons.Default.Album, null) }, label = { Text("Альбомы") },
         )
         NavigationBarItem(
-            selected = vm.tab == 2, onClick = { vm.tab = 2 },
+            selected = vm.tab == 2, onClick = { vm.openTab(2) },
             icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Треки") },
         )
     }
@@ -371,7 +382,7 @@ private fun AlbumsTab(vm: PlayerViewModel) {
         itemsIndexed(list, key = { _, a -> a.key }) { _, a ->
             ListItem(
                 modifier = Modifier.animateItem().clickable { vm.push(Screen.AlbumScreen(a.key)) },
-                leadingContent = { Cover(a.tracks.firstOrNull()?.uri, 56.dp, sample = 4) },
+                leadingContent = { Cover(a.tracks.firstOrNull()?.uri, 56.dp) },
                 headlineContent = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = {
                     Text("${a.artist} · ${a.tracks.size} ${plural(a.tracks.size)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -526,24 +537,51 @@ private fun RowMenu(items: List<Pair<String, () -> Unit>>) {
     }
 }
 
+/** Размер обложки в полноэкранном плеере. Мини-плеер декодирует обложку в том же размере, чтобы при открытии плеера она уже была в кэше. */
+private val PLAYER_COVER_SIZE = 280.dp
+
+/** Кэш обложек в памяти: повторное открытие плеера и прокрутка списков не декодируют картинки заново. */
+private val coverCache = object : LruCache<String, ImageBitmap>(24 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
+}
+
+/** Декодирует встроенную обложку сразу в нужном размере (а не в полном разрешении), чтобы не нагружать память и GPU. */
+private fun decodeCover(ctx: Context, uri: String, targetPx: Int): ImageBitmap? {
+    val r = MediaMetadataRetriever()
+    return try {
+        r.setDataSource(ctx, Uri.parse(uri))
+        val data = r.embeddedPicture ?: return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
+        val minSide = minOf(bounds.outWidth, bounds.outHeight)
+        var sample = 1
+        while (minSide / (sample * 2) >= targetPx) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        BitmapFactory.decodeByteArray(data, 0, data.size, opts)?.asImageBitmap()
+    } catch (_: Exception) {
+        null
+    } finally {
+        runCatching { r.release() }
+    }
+}
+
 @Composable
-private fun Cover(uri: String?, size: Dp, sample: Int = 2) {
+private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
     val ctx = LocalContext.current
-    val bmp by produceState<ImageBitmap?>(null, uri) {
-        value = if (uri == null) null else withContext(Dispatchers.IO) {
-            val r = MediaMetadataRetriever()
-            try {
-                r.setDataSource(ctx, Uri.parse(uri))
-                r.embeddedPicture?.let {
-                    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-                    BitmapFactory.decodeByteArray(it, 0, it.size, opts)?.asImageBitmap()
-                }
-            } catch (_: Exception) {
-                null
-            } finally {
-                runCatching { r.release() }
-            }
+    val targetPx = with(LocalDensity.current) { decodeSize.roundToPx() }
+    val key = "$uri@$targetPx"
+    val bmp by produceState<ImageBitmap?>(if (uri == null) null else coverCache.get(key), key) {
+        if (uri == null) {
+            value = null
+            return@produceState
         }
+        val cached = coverCache.get(key)
+        if (cached != null) {
+            value = cached
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) { decodeCover(ctx, uri, targetPx) }
+            ?.also { coverCache.put(key, it) }
     }
     Box(
         Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
@@ -602,17 +640,14 @@ private fun NameDialog(title: String, initial: String, onConfirm: (String) -> Un
 // =====================================================================
 
 @Composable
-private fun MiniPlayer(vm: PlayerViewModel, bottomInset: Boolean) {
+private fun MiniPlayer(vm: PlayerViewModel) {
     val t = vm.currentTrack
     Surface(
         tonalElevation = 3.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { vm.push(Screen.Player) }
-            .then(if (bottomInset) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier),
+        modifier = Modifier.fillMaxWidth().clickable { vm.openPlayer() },
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Cover(t?.uri, 44.dp, sample = 4)
+            Cover(t?.uri, 44.dp, decodeSize = PLAYER_COVER_SIZE)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(t?.title ?: "…", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                 Text(t?.artist ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
@@ -627,81 +662,127 @@ private fun MiniPlayer(vm: PlayerViewModel, bottomInset: Boolean) {
     }
 }
 
+/** Полноэкранный плеер. Рисуется отдельным слоем поверх приложения, поэтому у него своя шапка и свои отступы под системные панели. */
 @Composable
 private fun PlayerScreen(vm: PlayerViewModel) {
     val t = vm.currentTrack
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { vm.pop() }) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Свернуть")
+                }
+                Text(
+                    "Сейчас играет",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            Column(
+                Modifier.weight(1f).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Cover(t?.uri, PLAYER_COVER_SIZE)
+                Spacer(Modifier.height(24.dp))
+                AnimatedContent(
+                    targetState = t,
+                    transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+                    label = "nowPlayingTitle",
+                ) { tr ->
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            tr?.title ?: "", style = MaterialTheme.typography.titleLarge,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            tr?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                SeekBar(vm, t?.durationMs ?: 0L)
+                Spacer(Modifier.height(8.dp))
+                PlayerControls(vm)
+            }
+        }
+    }
+}
+
+/**
+ * Полоса прогресса. Позиция читается на каждом кадре (а не раз в 300 мс), поэтому ползунок движется плавно.
+ * Вынесена в отдельный composable, чтобы покадровые обновления перерисовывали только её, а не весь экран плеера.
+ */
+@Composable
+private fun SeekBar(vm: PlayerViewModel, durationMs: Long) {
     var pos by remember { mutableLongStateOf(0L) }
     var dragging by remember { mutableStateOf<Float?>(null) }
+    val total = durationMs.coerceAtLeast(1L)
 
     LaunchedEffect(vm.currentId, vm.isPlaying) {
-        while (true) {
-            pos = vm.controller?.currentPosition ?: 0L
-            delay(if (vm.isPlaying) 300 else 1000)
+        pos = vm.controller?.currentPosition ?: 0L
+        if (vm.isPlaying) {
+            while (true) {
+                withFrameNanos { }
+                if (dragging == null) pos = vm.controller?.currentPosition ?: pos
+            }
         }
     }
 
-    val total = (t?.durationMs ?: 0L).coerceAtLeast(1L)
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Cover(t?.uri, 280.dp, sample = 1)
-        Spacer(Modifier.height(24.dp))
-        AnimatedContent(
-            targetState = t,
-            transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
-            label = "nowPlayingTitle",
-        ) { tr ->
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    tr?.title ?: "", style = MaterialTheme.typography.titleLarge,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                )
-                Text(
-                    tr?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
+    val elapsedSec = (dragging?.toLong() ?: pos) / 1000
+    val elapsedText = remember(elapsedSec) { formatTime(elapsedSec * 1000) }
+    val totalText = remember(durationMs) { formatTime(durationMs) }
+
+    Column(Modifier.fillMaxWidth()) {
         Slider(
             value = (dragging ?: pos.toFloat()).coerceIn(0f, total.toFloat()),
             onValueChange = { dragging = it },
-            onValueChangeFinished = { dragging?.let { vm.seekTo(it.toLong()) }; dragging = null },
+            onValueChangeFinished = {
+                dragging?.let { v ->
+                    pos = v.toLong()
+                    vm.seekTo(v.toLong())
+                }
+                dragging = null
+            },
             valueRange = 0f..total.toFloat(),
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatTime((dragging?.toLong() ?: pos)), style = MaterialTheme.typography.bodySmall)
-            Text(formatTime(t?.durationMs ?: 0L), style = MaterialTheme.typography.bodySmall)
+            Text(elapsedText, style = MaterialTheme.typography.bodySmall)
+            Text(totalText, style = MaterialTheme.typography.bodySmall)
         }
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            val shuffleTint by animateColorAsState(
-                if (vm.shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                label = "shuffleTint",
+    }
+}
+
+@Composable
+private fun PlayerControls(vm: PlayerViewModel) {
+    val shuffleTint by animateColorAsState(
+        if (vm.shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "shuffleTint",
+    )
+    val repeatTint by animateColorAsState(
+        if (vm.repeat != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "repeatTint",
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { vm.toggleShuffle() }) {
+            Icon(Icons.Default.Shuffle, "Перемешать", tint = shuffleTint)
+        }
+        IconButton(onClick = { vm.prev() }) { Icon(Icons.Default.SkipPrevious, "Предыдущий", Modifier.size(36.dp)) }
+        FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(72.dp)) {
+            Crossfade(targetState = vm.isPlaying, label = "bigPlay") { playing ->
+                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей", Modifier.size(40.dp))
+            }
+        }
+        IconButton(onClick = { vm.next() }) { Icon(Icons.Default.SkipNext, "Следующий", Modifier.size(36.dp)) }
+        IconButton(onClick = { vm.cycleRepeat() }) {
+            Icon(
+                if (vm.repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                "Повтор",
+                tint = repeatTint,
             )
-            val repeatTint by animateColorAsState(
-                if (vm.repeat != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                label = "repeatTint",
-            )
-            IconButton(onClick = { vm.toggleShuffle() }) {
-                Icon(Icons.Default.Shuffle, "Перемешать", tint = shuffleTint)
-            }
-            IconButton(onClick = { vm.prev() }) { Icon(Icons.Default.SkipPrevious, "Предыдущий", Modifier.size(36.dp)) }
-            FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(72.dp)) {
-                Crossfade(targetState = vm.isPlaying, label = "bigPlay") { playing ->
-                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей", Modifier.size(40.dp))
-                }
-            }
-            IconButton(onClick = { vm.next() }) { Icon(Icons.Default.SkipNext, "Следующий", Modifier.size(36.dp)) }
-            IconButton(onClick = { vm.cycleRepeat() }) {
-                Icon(
-                    if (vm.repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                    "Повтор",
-                    tint = repeatTint,
-                )
-            }
         }
     }
 }
