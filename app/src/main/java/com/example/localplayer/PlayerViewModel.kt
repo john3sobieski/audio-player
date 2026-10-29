@@ -418,7 +418,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var uiTargetJob: Job? = null
 
     /** Кнопка меняется мгновенно; [uiTarget] живёт не дольше 2 с, после чего кнопка снова следует за плеером. */
-    private fun setUiPlaying(value: Boolean) {
+    private fun markUiPlaying(value: Boolean) {
         uiPlaying = value
         uiTarget = value
         uiTargetJob?.cancel()
@@ -574,7 +574,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.setMediaItems(list.map { it.toItem() }, index.coerceIn(0, list.lastIndex), 0L)
         c.prepare()
         c.play()
-        setUiPlaying(true)
+        markUiPlaying(true)
     }
 
     fun playShuffled(list: List<Track>) {
@@ -586,10 +586,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val c = controller ?: return
         // Ориентируемся на то, что видит пользователь: во время затухания c.isPlaying ещё true
         if (uiPlaying) {
-            setUiPlaying(false)
+            markUiPlaying(false)
             c.pause()
         } else {
-            setUiPlaying(true)
+            markUiPlaying(true)
             c.play()
         }
     }
