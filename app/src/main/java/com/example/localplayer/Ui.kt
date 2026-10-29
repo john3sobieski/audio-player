@@ -94,6 +94,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TextField
@@ -1463,8 +1464,116 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             headlineContent = { Text("Эквалайзер") },
             supportingContent = { Text("12 полос · режим: ${eqModeLabel(vm.eqMode)}") },
         )
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider()
+
+        // ----- Кэш и сброс -----
+        var showReset by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { vm.refreshCacheSize() }
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TwoStepButton("Очистить кэш приложения", "Нажмите ещё раз для подтверждения") {
+                vm.clearAppCache()
+                clearCoverMemoryCache()
+            }
+            Text(
+                "В кэше сейчас: ${formatBytes(vm.cacheBytes)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { showReset = true },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Сбросить до заводских настроек") }
+        }
+        if (showReset) {
+            FactoryResetDialog(
+                onConfirm = { clearCache ->
+                    vm.factoryReset(clearCache)
+                    if (clearCache) clearCoverMemoryCache()
+                    showReset = false
+                },
+                onDismiss = { showReset = false },
+            )
+        }
         Spacer(Modifier.height(16.dp))
     }
+}
+
+/** Кнопка с двумя нажатиями: первое «взводит» её (4 секунды), второе выполняет действие. */
+@Composable
+private fun TwoStepButton(label: String, armedLabel: String, onConfirm: () -> Unit) {
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(armed) {
+        if (armed) {
+            delay(4000)
+            armed = false
+        }
+    }
+    if (armed) {
+        Button(
+            onClick = { armed = false; onConfirm() },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(armedLabel) }
+    } else {
+        OutlinedButton(onClick = { armed = true }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+    }
+}
+
+@Composable
+private fun FactoryResetDialog(onConfirm: (clearCache: Boolean) -> Unit, onDismiss: () -> Unit) {
+    var clearCache by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Сбросить до заводских настроек?") },
+        text = {
+            Column {
+                Text(
+                    "Будут сброшены все настройки звука (моно, нормализация, басы, требл, subsonic, скорость), " +
+                        "все эквалайзеры (общий и отдельных треков) и сортировки. " +
+                        "Плейлисты и выбранная папка сохранятся.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { clearCache = false },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = !clearCache, onClick = null)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Только сбросить настройки", Modifier.padding(vertical = 10.dp))
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { clearCache = true },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = clearCache, onClick = null)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Сбросить настройки и очистить весь кэш", Modifier.padding(vertical = 10.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(clearCache) }) {
+                Text("Сбросить", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+/** Сбрасывает кэш обложек в памяти (вместе с очисткой дискового кэша). */
+internal fun clearCoverMemoryCache() = coverCache.evictAll()
+
+private fun formatBytes(b: Long): String = when {
+    b < 1024 -> "$b Б"
+    b < 1024 * 1024 -> String.format(java.util.Locale("ru"), "%.0f КБ", b / 1024.0)
+    else -> String.format(java.util.Locale("ru"), "%.1f МБ", b / 1024.0 / 1024.0)
 }
 
 @Composable

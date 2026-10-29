@@ -18,14 +18,12 @@ import kotlin.math.roundToInt
  *  - хранятся только уменьшенные копии в WebP (192 px для списков, 640 px для плеера и экрана альбома);
  *  - файл называется по хэшу картинки, поэтому у всех треков одного альбома одна общая копия;
  *  - треки без обложки запоминаются в индексе, файл повторно не открывается;
- *  - общий размер ограничен [MAX_BYTES], лишнее удаляется (сначала давно не используемое);
  *  - удалённые из библиотеки треки и их картинки вычищаются после сканирования;
  *  - лежит в cacheDir: систему можно очистить, и Android сам освободит место при нехватке.
  */
 object CoverStore {
     private const val SMALL_PX = 192
     private const val LARGE_PX = 640
-    private const val MAX_BYTES = 24L * 1024 * 1024
     private const val QUALITY = 80
     private const val NONE = "-"
 
@@ -33,7 +31,6 @@ object CoverStore {
     private val index = HashMap<String, String>() // ключ трека -> хэш картинки или NONE
     private val lock = Any()
     private var dirty = 0
-    private var writes = 0
 
     /** В каком из двух размеров хранить обложку, которой нужно [targetPx] пикселей. */
     fun tierPx(targetPx: Int): Int = if (targetPx <= 200) SMALL_PX else LARGE_PX
@@ -119,20 +116,7 @@ object CoverStore {
             val fmt = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
             FileOutputStream(tmp).use { bmp.compress(fmt, QUALITY, it) }
             if (!tmp.renameTo(f)) tmp.delete()
-            if (++writes % 20 == 0) trim(d)
         } catch (_: Exception) {
-        }
-    }
-
-    /** Если кэш вырос больше лимита — удаляем самые давно использованные файлы, пока не освободится ~20%. */
-    private fun trim(d: File) {
-        val files = d.listFiles()?.filter { it.name.endsWith(".webp") } ?: return
-        var total = files.sumOf { it.length() }
-        if (total <= MAX_BYTES) return
-        for (f in files.sortedBy { it.lastModified() }) {
-            if (total <= MAX_BYTES * 8 / 10) break
-            total -= f.length()
-            f.delete()
         }
     }
 
@@ -165,6 +149,9 @@ object CoverStore {
     fun flush() {
         synchronized(lock) { if (dirty > 0) saveLocked() }
     }
+
+    /** Сколько места занимает кэш обложек на диске (байты). */
+    fun sizeBytes(ctx: Context): Long = ensureDir(ctx).listFiles()?.sumOf { it.length() } ?: 0L
 
     /** Полная очистка (при смене папки и «Пересканировать»): так подхватываются изменённые обложки. */
     fun clear(ctx: Context) {

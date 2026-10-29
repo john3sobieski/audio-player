@@ -255,6 +255,14 @@ class Library(private val ctx: Context) {
     }
 
     /** Порядок, заданный перетаскиванием (идентификаторы треков, альбомов или плейлистов). */
+    /** Сбрасывает сортировки всех вкладок и ручной порядок (перетаскивание). */
+    fun resetViewSettings() {
+        val e = prefs.edit()
+        prefs.all.keys.filter { it.startsWith("sort_") }.forEach { e.remove(it) }
+        e.apply()
+        ctx.filesDir.listFiles()?.filter { it.name.startsWith("order_") }?.forEach { it.delete() }
+    }
+
     fun loadOrder(name: String): List<String> = try {
         val arr = JSONArray(File(ctx.filesDir, "order_$name.json").readText())
         List(arr.length()) { arr.getString(it) }

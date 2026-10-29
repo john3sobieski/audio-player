@@ -230,6 +230,27 @@ object AudioFx {
         refresh()
     }
 
+    /** Сброс всех настроек звука и эквалайзеров (общего и отдельных треков) к заводским. */
+    fun resetAll() {
+        mono = false
+        normalize = false
+        eqMode = EqMode.OFF
+        bassEnabled = false
+        bassLevel = 6f
+        trebleEnabled = false
+        trebleLevel = 6f
+        subEnabled = false
+        subLevel = 50f
+        speedEnabled = false
+        speedLevel = 0f
+        globalGains = ZERO
+        trackGains.clear()
+        globalExcluded.clear()
+        refresh()
+        persistSettings()
+        persistTracks()
+    }
+
     fun setGlobalGains(g: FloatArray) {
         globalGains = g.copyOf()
         refresh()

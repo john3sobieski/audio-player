@@ -8,6 +8,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -563,6 +564,54 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             } catch (_: Exception) {
             }
         }, ContextCompat.getMainExecutor(app))
+    }
+
+    // ---------- Кэш и сброс настроек ----------
+
+    /** Размер дискового кэша обложек (обновляется при открытии настроек и после очистки). */
+    var cacheBytes by mutableLongStateOf(0L)
+        private set
+
+    fun refreshCacheSize() {
+        viewModelScope.launch {
+            cacheBytes = withContext(Dispatchers.IO) { CoverStore.sizeBytes(getApplication<Application>()) }
+        }
+    }
+
+    fun clearAppCache() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { CoverStore.clear(getApplication<Application>()) }
+            cacheBytes = withContext(Dispatchers.IO) { CoverStore.sizeBytes(getApplication<Application>()) }
+        }
+    }
+
+    /** Заводские настройки: звук, эквалайзеры, сортировки. Плейлисты и выбранная папка остаются. */
+    fun factoryReset(clearCache: Boolean) {
+        AudioFx.resetAll()
+        monoEnabled = false
+        normalizeEnabled = false
+        eqMode = AudioFx.eqMode
+        bassEnabled = AudioFx.bassEnabled
+        bassDb = AudioFx.bassLevel
+        trebleEnabled = AudioFx.trebleEnabled
+        trebleDb = AudioFx.trebleLevel
+        subEnabled = AudioFx.subEnabled
+        subLevel = AudioFx.subLevel
+        speedEnabled = AudioFx.speedEnabled
+        speedValue = AudioFx.speedLevel
+        globalGains = AudioFx.globalGains.toList()
+        applySpeed()
+        trackRev++
+
+        viewModelScope.launch(Dispatchers.IO) { library.resetViewSettings() }
+        trackSort = SortState(SortKey.NAME)
+        albumSort = SortState(SortKey.NAME)
+        playlistSort = SortState(SortKey.MANUAL)
+        trackOrder = emptyList()
+        albumOrder = emptyList()
+        playlistOrder = emptyList()
+
+        if (clearCache) clearAppCache()
     }
 
     // ---------- Папка и сканирование ----------

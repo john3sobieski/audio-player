@@ -13,7 +13,8 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
   - **Tracks**: all tracks in one mixed list
 - **Background playback** with a media notification, lock screen controls, and headset button support.
 - **Player controls:** play/pause, next/previous, seek, shuffle, repeat (off / all / one).
-- **Cover art** read from embedded tags and cached on disk in a space-saving way (small WebP thumbnails, one copy per album, size-capped to 24 MB, cleaned of removed tracks), so covers load instantly after restarting the app.
+- **Cover art** read from embedded tags and cached on disk in a space-saving way (small WebP thumbnails, one copy per album, no size limit, cleaned of removed tracks), so covers load instantly after restarting the app.
+- **Settings footer:** *Clear app cache* (two taps to confirm, shows the current cache size) and *Reset to factory settings* (confirmation dialog: reset only settings, or settings and cache). The reset restores sound settings, all equalizers and sorting; playlists and the chosen folder are kept.
 - **Search** (magnifier left of the gear): finds playlists, albums or tracks depending on the open tab. Partial and whole-word matches, case-insensitive, `ё`=`е`; several words must all match.
 - **Heart and info buttons** next to the track title in the player: the heart toggles the current track in *Liked tracks* (on/off), the round **i** button opens a window with all track details (tags, format, bitrate, sample rate, channels, size, file date, date added to the player, cover size; the folder path is not shown).
 - **Quality badge** above the cover in the player: a rounded pill with the file format and quality (e.g. `MP3 / 192 kbps`, `FLAC / 24 Bit – 96 kHz`), colored by "rarity" like in games: light blue → green → blue (lossy), purple (CD-quality lossless), red (hi-res), gold (24 Bit / 176.4 kHz and above).
