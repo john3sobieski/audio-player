@@ -14,6 +14,11 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -325,7 +330,15 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
     val searching = vm.searchOpen && screen == null
     // 0 -> 1: заголовок уезжает влево и гаснет, на его месте раскрывается поле поиска
     val shift by animateFloatAsState(if (searching) 1f else 0f, tween(320), label = "titleShift")
+    val barColors = MaterialTheme.colorScheme
     TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = barColors.surface,
+            scrolledContainerColor = barColors.surface,
+            navigationIconContentColor = barColors.onSurface,
+            titleContentColor = barColors.onSurface,
+            actionIconContentColor = barColors.onSurfaceVariant,
+        ),
         title = {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                 AnimatedContent(
@@ -415,18 +428,26 @@ private fun SearchField(vm: PlayerViewModel) {
 
 @Composable
 private fun LibraryNavBar(vm: PlayerViewModel) {
-    NavigationBar {
+    val cs = MaterialTheme.colorScheme
+    val itemColors = NavigationBarItemDefaults.colors(
+        selectedIconColor = cs.onSecondaryContainer,
+        selectedTextColor = cs.onSurface,
+        indicatorColor = cs.secondaryContainer,
+        unselectedIconColor = cs.onSurfaceVariant,
+        unselectedTextColor = cs.onSurfaceVariant,
+    )
+    NavigationBar(containerColor = cs.surfaceContainer) {
         NavigationBarItem(
             selected = vm.tab == 0, onClick = { vm.openTab(0) },
-            icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) }, label = { Text("Плейлисты") },
+            icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) }, label = { Text("Плейлисты") }, colors = itemColors,
         )
         NavigationBarItem(
             selected = vm.tab == 1, onClick = { vm.openTab(1) },
-            icon = { Icon(Icons.Default.Album, null) }, label = { Text("Альбомы") },
+            icon = { Icon(Icons.Default.Album, null) }, label = { Text("Альбомы") }, colors = itemColors,
         )
         NavigationBarItem(
             selected = vm.tab == 2, onClick = { vm.openTab(2) },
-            icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Треки") },
+            icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Треки") }, colors = itemColors,
         )
     }
 }
@@ -448,16 +469,28 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         // Вкладки — страницы горизонтального пейджера: переход прерывается и перенаправляется на лету,
         // поэтому при быстром переключении страницы не накладываются друг на друга. Работает и свайп.
         val pagerState = rememberPagerState(initialPage = vm.tab) { 3 }
+        // pending — страница, к которой мы сами прокручиваем по нажатию на нижнюю панель. Пока она не достигнута,
+        // промежуточные остановки пейджера не считаются выбором пользователя (раньше они возвращали вкладку назад
+        // и из-за этого переход «залипал»).
+        var pending by remember { mutableIntStateOf(-1) }
+        val dragging by pagerState.interactionSource.collectIsDraggedAsState()
+        LaunchedEffect(dragging) { if (dragging) pending = -1 }
         LaunchedEffect(vm.tab) {
-            if (pagerState.currentPage != vm.tab || pagerState.targetPage != vm.tab) pagerState.animateScrollToPage(vm.tab)
+            if (pagerState.currentPage != vm.tab || pagerState.targetPage != vm.tab) {
+                pending = vm.tab
+                pagerState.animateScrollToPage(vm.tab, animationSpec = tween(300, easing = FastOutSlowInEasing))
+            }
         }
         LaunchedEffect(pagerState) {
-            snapshotFlow { pagerState.settledPage }.collect { if (it != vm.tab) vm.openTab(it) }
+            snapshotFlow { pagerState.settledPage }.collect { page ->
+                if (page == pending) pending = -1 else if (pending == -1 && page != vm.tab) vm.openTab(page)
+            }
         }
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            beyondViewportPageCount = 0,
+            // Соседние страницы собираются заранее: переход не ждёт отрисовки тяжёлого списка треков
+            beyondViewportPageCount = 2,
             key = { it },
         ) { page ->
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
