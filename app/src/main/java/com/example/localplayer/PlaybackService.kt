@@ -12,7 +12,6 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -32,7 +31,7 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         AudioFx.load(this)
 
-        // Свой аудиовыход с обработчиком звука (моно / нормализация громкости)
+        // Свой аудиовыход: эффекты (эквалайзер, моно, нормализация) и качественное изменение скорости
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -41,8 +40,9 @@ class PlaybackService : MediaSessionService() {
             ): AudioSink? =
                 DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
-                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf<AudioProcessor>(AudioFxProcessor()))
+                    // Скорость считаем сами (TimeStretch.kt), а не средствами AudioTrack или встроенным Sonic
+                    .setEnableAudioTrackPlaybackParams(false)
+                    .setAudioProcessorChain(SpeedAudioProcessorChain(AudioFxProcessor()))
                     .build()
         }
 

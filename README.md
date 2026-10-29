@@ -31,7 +31,7 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
     - **10 presets** (Rock, Pop, Hip-hop, Electronic, Jazz, Classical, Metal, Acoustic, Vocal, Bass) in both Settings and the player's EQ screen (in *Per track* mode: in the player, applied to the current track)
     - The mode is chosen in Settings only; the player's equalizer screen has no mode switch and explains which mode is active
   - Bass, treble, subsonic filter and the equalizer are independent and can be used together. Switching equalizer modes never erases saved curves.
-- **Playback speed** from −3x (3 times slower) to 3x (3 times faster) in 0.1 steps (the **Speed** button in the player's sound row, also in Settings). Pitch is preserved; the current speed is shown on the button while it is on.
+- **Playback speed** from −3x (3 times slower) to 3x (3 times faster) in 0.1 steps (the **Speed** button in the player's sound row, also in Settings). Pitch is preserved. Speed is changed by our own phase vocoder with phase locking (`TimeStretch.kt`) instead of the built-in Sonic, so slowed-down music sounds smooth instead of choppy; the stereo image is preserved and the CPU load is a few percent of one core.
 - **Sorting** in Playlists, Albums and Tracks: a thin bar under the title with the sort type on the left (by name, artist, album, duration, file date, creation/change date, number of tracks, or *Manual*) and ascending/descending on the right. The choice is remembered per section.
 - **Reordering by long press:** hold a playlist, album or track and drag it up or down (the list scrolls near the edges). The list then switches to *Manual* sorting and the order is saved. Tracks inside a playlist can be reordered the same way.
 - **Smooth animations** for screen transitions, tab switching, the full-screen player, and list changes.
@@ -93,6 +93,7 @@ This repository includes a workflow in `.github/workflows/build.yml`.
 app/src/main/java/com/example/localplayer/
 ├── MainActivity.kt        # Entry point, theme, notification permission
 ├── Ui.kt                  # All screens and animations (Compose)
+├── TimeStretch.kt         # Speed change without pitch change (phase vocoder)
 ├── ListTools.kt           # Long-press drag reordering and the sort bar
 ├── PlayerViewModel.kt     # App state, playlists, player control
 ├── Library.kt             # Folder scanning, metadata cache, playlist storage
