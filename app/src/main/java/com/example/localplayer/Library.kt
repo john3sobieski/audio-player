@@ -111,6 +111,9 @@ class Library(private val ctx: Context) {
                     val id = c.getString(0) ?: continue
                     val name = c.getString(1) ?: ""
                     val mime = c.getString(2) ?: ""
+                    // Скрытые файлы и папки (начинаются с точки) — не музыка. Главное: Android при удалении файла
+                    // не стирает его сразу, а переименовывает в «.trashed-<время>-<имя>» (корзина), также бывают «.pending-…».
+                    if (name.startsWith(".")) continue
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         walk(tree, id, out)
                     } else if (mime.startsWith("audio/") || name.substringAfterLast('.', "").lowercase() in audioExt) {

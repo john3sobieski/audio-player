@@ -19,6 +19,7 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 - **Heart and info buttons** next to the track title in the player: the heart works like the "+" in Spotify and opens a compact window with your playlists. *Liked tracks* are pinned at the top (with a divider below), the other playlists follow in the same order as in the **Playlists** tab. Tap a playlist to add the track or remove it again; a check mark shows where the track already is, and the heart is filled when the track is in at least one playlist. The round **i** button opens a window with all track details (tags, format, bitrate, sample rate, channels, size, file date, date added to the player, cover size; the folder path is not shown).
 - **Theme** (Settings): *Light*, *Dark* (true black, for OLED screens) or *System* (follows the phone's dark mode; the default).
 - **Quality badge** above the cover in the player: a rounded pill with the file format and quality (e.g. `MP3 / 192 kbps`, `FLAC / 24 Bit – 96 kHz`), colored by "rarity" like in games: light blue → green → blue (lossy), purple (CD-quality lossless), red (hi-res), gold (24 Bit / 176.4 kHz and above).
+- **Hidden and trashed files are ignored** (names starting with a dot, such as Android's `.trashed-…` recycle-bin files).
 - **Always up to date:** the folder is rescanned every time you open the app (or return to it), so added and deleted files show up automatically. Track metadata is cached, so rescans are fast.
 - **Sound settings:**
   - **Mono / stereo** switch
