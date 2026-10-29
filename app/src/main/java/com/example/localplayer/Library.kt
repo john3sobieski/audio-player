@@ -24,6 +24,7 @@ class Library(private val ctx: Context) {
     private val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
     private val playlistsFile = File(ctx.filesDir, "playlists.json")
     private val cacheFile = File(ctx.filesDir, "tracks_cache.json")
+    private val addedFile = File(ctx.filesDir, "added.json")
 
     private val audioExt = setOf("mp3", "flac", "ogg", "oga", "opus", "m4a", "aac", "wav", "wma", "mka", "amr")
 
@@ -58,7 +59,32 @@ class Library(private val ctx: Context) {
         }
 
         saveCache(pairs)
-        pairs.map { it.second }.sortedBy { it.title.lowercase() }
+
+        // Дата «добавлен в плеер»: запоминаем, когда трек впервые увидели при сканировании
+        val added = loadAdded()
+        val now = System.currentTimeMillis()
+        var changed = false
+        val result = pairs.map { (_, t) ->
+            t.copy(added = added.getOrPut(t.uri) { changed = true; now })
+        }
+        if (changed) saveAdded(added)
+        result.sortedBy { it.title.lowercase() }
+    }
+
+    private fun loadAdded(): HashMap<String, Long> = try {
+        val o = JSONObject(addedFile.readText())
+        HashMap<String, Long>().also { m -> o.keys().forEach { k -> m[k] = o.getLong(k) } }
+    } catch (_: Exception) {
+        HashMap()
+    }
+
+    private fun saveAdded(map: Map<String, Long>) {
+        try {
+            val o = JSONObject()
+            for ((k, v) in map) o.put(k, v)
+            addedFile.writeText(o.toString())
+        } catch (_: Exception) {
+        }
     }
 
     private fun walk(tree: Uri, parentDocId: String, out: MutableList<Entry>) {
@@ -179,7 +205,10 @@ class Library(private val ctx: Context) {
     }
 
     /** Треки из прошлого сканирования: показываем их мгновенно, пока идёт актуальный скан. */
-    fun cachedTracks(): List<Track> = loadCache().values.sortedBy { it.title.lowercase() }
+    fun cachedTracks(): List<Track> {
+        val added = loadAdded()
+        return loadCache().values.map { it.copy(added = added[it.uri] ?: 0L) }.sortedBy { it.title.lowercase() }
+    }
 
     // ---------- Плейлисты ----------
 

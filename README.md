@@ -8,12 +8,13 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 
 - **Single music folder.** Pick a folder in Settings; the app scans it and its subfolders. It uses Android's Storage Access Framework, so it never requests access to your whole storage and cannot see anything outside the folder you picked.
 - **Three library sections:**
-  - **Playlists**: playlists you create yourself (create, rename, delete, add and remove tracks)
-  - **Albums**: grouped automatically from the files' tags
+  - **Playlists**: playlists you create yourself (create, rename, delete, add and remove tracks). The default playlist **Liked tracks** (*Понравившиеся треки*) is always pinned at the top and cannot be renamed or deleted
+  - **Albums**: grouped automatically from the files' tags; an album screen shows its cover art at the top
   - **Tracks**: all tracks in one mixed list
 - **Background playback** with a media notification, lock screen controls, and headset button support.
 - **Player controls:** play/pause, next/previous, seek, shuffle, repeat (off / all / one).
 - **Cover art** read from embedded tags.
+- **Heart and info buttons** next to the track title in the player: the heart toggles the current track in *Liked tracks* (on/off), the round **i** button opens a window with all track details (tags, format, bitrate, sample rate, channels, size, file date, date added to the player, cover size; the folder path is not shown).
 - **Quality badge** above the cover in the player: a rounded pill with the file format and quality (e.g. `MP3 / 192 kbps`, `FLAC / 24 Bit – 96 kHz`), colored by "rarity" like in games: light blue → green → blue (lossy), purple (CD-quality lossless), red (hi-res), gold (24 Bit / 176.4 kHz and above).
 - **Always up to date:** the folder is rescanned every time you open the app (or return to it), so added and deleted files show up automatically. Track metadata is cached, so rescans are fast.
 - **Sound settings:**
@@ -92,6 +93,7 @@ app/src/main/java/com/example/localplayer/
 ├── Library.kt             # Folder scanning, metadata cache, playlist storage
 ├── PlaybackService.kt     # Background playback (Media3 MediaSessionService)
 ├── AudioFx.kt             # Sound settings storage + real-time audio processor (mono, normalization, 12-band EQ, bass/treble shelves, subsonic filter)
+├── TrackInfo.kt           # Data for the "i" track details window
 └── Models.kt              # Track / Album / Playlist data classes
 ```
 

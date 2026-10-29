@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
@@ -130,14 +131,21 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val sortedPlaylists by derivedStateOf {
-        applySort(playlists, playlistSort, playlistOrder, { it.id }) { key ->
+        // «Понравившиеся треки» всегда в самом верху, при любой сортировке и направлении
+        val (fav, regular) = applySort(playlists, playlistSort, playlistOrder, { it.id }) { key ->
             when (key) {
                 SortKey.CREATED -> compareBy<Playlist>({ it.createdAt }, { it.name.lowercase() })
                 SortKey.UPDATED -> compareBy<Playlist>({ it.updatedAt }, { it.name.lowercase() })
                 SortKey.COUNT -> compareBy<Playlist>({ it.trackUris.size }, { it.name.lowercase() })
                 else -> compareBy<Playlist> { it.name.lowercase() }
             }
-        }
+        }.partition { it.id == FAVORITES_ID }
+        fav + regular
+    }
+
+    /** URI треков из плейлиста «Понравившиеся треки» (для закрашенного сердечка в плеере). */
+    val favoriteUris by derivedStateOf {
+        playlists.firstOrNull { it.id == FAVORITES_ID }?.trackUris?.toHashSet() ?: emptySet<String>()
     }
 
     fun changeTrackSort(s: SortState) { trackSort = s; library.saveSort("tracks", s) }
@@ -479,7 +487,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         speedValue = AudioFx.speedLevel
         globalGains = AudioFx.globalGains.toList()
 
-        playlists = library.loadPlaylists()
+        val loaded = library.loadPlaylists()
+        playlists = withFavorites(loaded)
+        if (playlists.size != loaded.size) library.savePlaylists(playlists)
         connectPlayer()
 
         val saved = library.savedFolder()
@@ -618,6 +628,25 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         library.savePlaylists(list)
     }
 
+    /** Гарантирует, что плейлист «Понравившиеся треки» существует. */
+    private fun withFavorites(list: List<Playlist>): List<Playlist> {
+        if (list.any { it.id == FAVORITES_ID }) return list
+        val now = System.currentTimeMillis()
+        return listOf(Playlist(FAVORITES_ID, FAVORITES_NAME, emptyList(), now, now)) + list
+    }
+
+    /** Сердечко в плеере: вкл/выкл — добавляет трек в «Понравившиеся» или убирает из них. */
+    fun toggleFavorite(track: Track) {
+        if (track.uri in favoriteUris) removeFromPlaylist(FAVORITES_ID, track) else addToPlaylist(FAVORITES_ID, track)
+    }
+
+    /** Число каналов играющего файла (по данным плеера); 0 — неизвестно. */
+    fun currentChannelCount(): Int = runCatching {
+        controller?.currentTracks?.groups
+            ?.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+            ?.getTrackFormat(0)?.channelCount
+    }.getOrNull()?.takeIf { it > 0 } ?: 0
+
     fun createPlaylist(name: String, first: Track? = null) {
         val clean = name.trim().ifEmpty { return }
         val now = System.currentTimeMillis()
@@ -625,11 +654,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun renamePlaylist(id: String, name: String) {
+        if (id == FAVORITES_ID) return
         val clean = name.trim().ifEmpty { return }
         commit(playlists.map { if (it.id == id) it.copy(name = clean, updatedAt = System.currentTimeMillis()) else it })
     }
 
     fun deletePlaylist(id: String) {
+        if (id == FAVORITES_ID) return
         commit(playlists.filterNot { it.id == id })
     }
 

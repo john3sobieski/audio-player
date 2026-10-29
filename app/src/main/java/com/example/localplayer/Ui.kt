@@ -24,6 +24,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -63,6 +64,8 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -83,6 +86,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -129,11 +133,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -489,7 +496,7 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
     val reorder = rememberReorderState(
         listState,
         ReorderCallbacks(
-            canDrag = { it is String },
+            canDrag = { it is String && it != FAVORITES_ID }, // «Понравившиеся треки» закреплены вверху
             onStart = { working.clear(); working.addAll(sorted) },
             onMove = { from, to -> working.moveByKey(from, to) { it.id } },
             onEnd = { vm.commitPlaylistOrder(working.map { it.id }) },
@@ -518,16 +525,22 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
                 val n = vm.playlistTracks(p).size
                 ListItem(
                     modifier = reorderableItem(reorder, p.id).clickable { vm.push(Screen.PlaylistScreen(p.id)) },
-                    leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) },
+                    leadingContent = {
+                        if (p.id == FAVORITES_ID) Icon(Icons.Default.Favorite, null, tint = MaterialTheme.colorScheme.primary)
+                        else Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null)
+                    },
                     headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = { Text("$n ${plural(n)}") },
                     trailingContent = {
-                        RowMenu(
-                            listOf(
-                                "Переименовать" to { vm.renameTarget = p },
-                                "Удалить" to { vm.deletePlaylist(p.id) },
-                            ),
-                        )
+                        // Плейлист по умолчанию нельзя переименовать или удалить
+                        if (p.id != FAVORITES_ID) {
+                            RowMenu(
+                                listOf(
+                                    "Переименовать" to { vm.renameTarget = p },
+                                    "Удалить" to { vm.deletePlaylist(p.id) },
+                                ),
+                            )
+                        }
                     },
                 )
             }
@@ -548,7 +561,8 @@ private fun AlbumScreen(vm: PlayerViewModel, key: String) {
         vm = vm,
         header = "${album.artist} · ${album.tracks.size} ${plural(album.tracks.size)}",
         list = album.tracks,
-        showCovers = false, // внутри альбома обложка у всех треков одна и так видна в списке альбомов
+        showCovers = false, // внутри альбома обложка у всех треков одна: показываем её один раз сверху
+        coverUri = album.tracks.firstOrNull()?.uri,
         menuFor = { t -> listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }) },
     )
 }
@@ -575,6 +589,8 @@ private fun TrackListScreen(
     list: List<Track>,
     emptyText: String = "Нет треков",
     showCovers: Boolean = true,
+    /** Если задан, над заголовком показывается большая обложка (экран альбома). */
+    coverUri: String? = null,
     menuFor: (Track) -> List<Pair<String, () -> Unit>>,
     /** Если задан, треки можно перетаскивать (долгое нажатие); получает новый порядок URI. */
     onReorder: ((List<String>) -> Unit)? = null,
@@ -595,7 +611,14 @@ private fun TrackListScreen(
     FastScrollContainer(listState, headerCount = 1) {
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         item {
-            Column(Modifier.padding(16.dp)) {
+            Column(
+                Modifier.fillMaxWidth().padding(16.dp),
+                horizontalAlignment = if (coverUri != null) Alignment.CenterHorizontally else Alignment.Start,
+            ) {
+                if (coverUri != null) {
+                    Cover(coverUri, ALBUM_COVER_SIZE)
+                    Spacer(Modifier.height(16.dp))
+                }
                 Text(header, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -693,6 +716,9 @@ private fun RowMenu(items: List<Pair<String, () -> Unit>>) {
 /** Размер обложки в списках треков (меньше, чем 56 dp в «Альбомах»). */
 private val TRACK_COVER_SIZE = 44.dp
 private val TRACK_NUMBER_WIDTH = 36.dp
+
+/** Размер обложки на экране альбома: чуть меньше, чем в плеере. */
+private val ALBUM_COVER_SIZE = 200.dp
 
 /** Размер обложки в полноэкранном плеере. Мини-плеер декодирует обложку в том же размере, чтобы при открытии плеера она уже была в кэше. */
 private val PLAYER_COVER_SIZE = 280.dp
@@ -830,6 +856,7 @@ private fun MiniPlayer(vm: PlayerViewModel) {
 @Composable
 private fun PlayerScreen(vm: PlayerViewModel) {
     val t = vm.currentTrack
+    var showInfo by remember { mutableStateOf(false) }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp),
@@ -859,20 +886,27 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                     Spacer(Modifier.height(12.dp))
                     Cover(t?.uri, coverSize)
                     Spacer(Modifier.height(24.dp))
-                    AnimatedContent(
-                        targetState = t,
-                        transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
-                        label = "nowPlayingTitle",
-                    ) { tr ->
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                tr?.title ?: "", style = MaterialTheme.typography.titleLarge,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                            )
-                            Text(
-                                tr?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TrackInfoButton(enabled = t != null) { showInfo = true }
+                        AnimatedContent(
+                            targetState = t,
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+                            label = "nowPlayingTitle",
+                        ) { tr ->
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    tr?.title ?: "", style = MaterialTheme.typography.titleLarge,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                                )
+                                Text(
+                                    tr?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        FavoriteButton(favorite = t != null && t.uri in vm.favoriteUris, enabled = t != null) {
+                            t?.let { vm.toggleFavorite(it) }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -885,6 +919,82 @@ private fun PlayerScreen(vm: PlayerViewModel) {
             }
         }
     }
+
+    if (showInfo && t != null) TrackInfoDialog(vm, t) { showInfo = false }
+}
+
+/** Круглая кнопка «i» слева от названия: открывает окно со всеми данными о треке. */
+@Composable
+private fun TrackInfoButton(enabled: Boolean, onClick: () -> Unit) {
+    val c = MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        Modifier.size(40.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(26.dp).border(1.5.dp, c, CircleShape), contentAlignment = Alignment.Center) {
+            Text(
+                "i", color = c, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic,
+            )
+        }
+    }
+}
+
+/** Сердечко справа от названия: вкл/выкл «Понравившиеся треки». Закрашено, если трек уже там. */
+@Composable
+private fun FavoriteButton(favorite: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val tint by animateColorAsState(
+        if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "favTint",
+    )
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
+        Icon(
+            if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = if (favorite) "Убрать из понравившихся" else "Добавить в понравившиеся",
+            tint = tint,
+        )
+    }
+}
+
+/** Окно «О треке»: теги и свойства файла (без пути к папке). */
+@Composable
+private fun TrackInfoDialog(vm: PlayerViewModel, track: Track, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val channels = remember(track.uri) { vm.currentChannelCount() }
+    val sections by produceState<List<TrackDetails.Section>?>(null, track.uri) {
+        value = TrackDetails.load(ctx, track, channels)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("О треке") },
+        text = {
+            val list = sections
+            if (list == null) {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    list.forEachIndexed { si, section ->
+                        if (si > 0) Spacer(Modifier.height(12.dp))
+                        Text(section.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(4.dp))
+                        section.rows.forEach { (label, value) ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                Text(
+                                    label, Modifier.weight(0.42f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(value, Modifier.weight(0.58f), style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
+    )
 }
 
 /**

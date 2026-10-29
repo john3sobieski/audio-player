@@ -11,6 +11,8 @@ data class Track(
     val info: AudioInfo = AudioInfo(),
     /** Дата изменения файла (мс): нужна для сортировки «по дате файла». */
     val modified: Long = 0L,
+    /** Когда трек впервые появился в библиотеке плеера (мс). 0 — неизвестно. */
+    val added: Long = 0L,
 )
 
 data class Album(
@@ -27,6 +29,10 @@ data class Playlist(
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
 )
+
+/** Плейлист по умолчанию: его нельзя удалить или переименовать, он всегда закреплён вверху списка. */
+const val FAVORITES_ID = "favorites"
+const val FAVORITES_NAME = "Понравившиеся треки"
 
 const val NO_ALBUM = "Без альбома"
 const val NO_ARTIST = "Неизвестный исполнитель"
