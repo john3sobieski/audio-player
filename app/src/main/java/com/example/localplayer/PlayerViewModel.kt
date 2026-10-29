@@ -417,33 +417,29 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var uiTarget: Boolean? = null
     private var uiTargetJob: Job? = null
 
-    /** Кнопка меняется мгновенно; [uiTarget] живёт не дольше 2 с, после чего кнопка снова следует за плеером. */
+    /**
+     * Кнопка меняется мгновенно по нажатию. MediaController сначала сам «оптимистично» ставит паузу, а затем сессия
+     * присылает настоящее состояние (звук ещё затухает, isPlaying = true), поэтому события плеера в течение короткого
+     * окна после нажатия игнорируются, и только потом кнопка снова следует за плеером.
+     */
     private fun markUiPlaying(value: Boolean) {
         uiPlaying = value
         uiTarget = value
         uiTargetJob?.cancel()
         uiTargetJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(2000)
+            kotlinx.coroutines.delay(if (value) 2000L else 800L)
             uiTarget = null
-            uiPlaying = isPlaying
+            val c = controller
+            uiPlaying = isPlaying || (c != null && c.playWhenReady && c.playbackState == Player.STATE_BUFFERING)
         }
     }
-    var shuffle by mutableStateOf(false)
-        private set
-    var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
-        private set
 
     val currentTrack: Track? get() = currentId?.let { trackByUri[it] }
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             this@PlayerViewModel.isPlaying = isPlaying
-            // Пока ждём реакции плеера на нажатие, устаревшие события не должны откатывать кнопку назад
-            val want = uiTarget
-            if (want == null || want == isPlaying) {
-                uiTarget = null
-                uiPlaying = isPlaying
-            }
+            if (uiTarget == null) uiPlaying = isPlaying
         }
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             uiPlaying = isPlaying
