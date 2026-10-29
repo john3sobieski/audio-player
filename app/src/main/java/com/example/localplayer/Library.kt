@@ -36,6 +36,15 @@ class Library(private val ctx: Context) {
         prefs.edit().putString("folder", uri?.toString()).apply()
     }
 
+    // ---------- Тема ----------
+
+    fun loadTheme(): ThemeMode =
+        runCatching { ThemeMode.valueOf(prefs.getString("theme", null) ?: "") }.getOrDefault(ThemeMode.SYSTEM)
+
+    fun saveTheme(mode: ThemeMode) {
+        prefs.edit().putString("theme", mode.name).apply()
+    }
+
     // ---------- Сканирование ----------
 
     private class Entry(val uri: Uri, val name: String, val stamp: String, val size: Long, val modified: Long)

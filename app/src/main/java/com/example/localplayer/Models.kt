@@ -34,6 +34,13 @@ data class Playlist(
 const val FAVORITES_ID = "favorites"
 const val FAVORITES_NAME = "Понравившиеся треки"
 
+/** Тема оформления. По умолчанию — [SYSTEM]: следует за настройкой телефона. */
+enum class ThemeMode(val label: String, val description: String) {
+    LIGHT("Ясный", "Светлое оформление"),
+    DARK("Тёмный", "Чисто чёрный фон, экономит заряд на OLED-экранах"),
+    SYSTEM("Системная", "Как на телефоне: тёмная, если на телефоне включена тёмная тема"),
+}
+
 const val NO_ALBUM = "Без альбома"
 const val NO_ARTIST = "Неизвестный исполнитель"
 

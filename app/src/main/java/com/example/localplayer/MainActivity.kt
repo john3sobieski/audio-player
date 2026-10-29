@@ -1,20 +1,26 @@
 package com.example.localplayer
 
 import android.Manifest
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
@@ -33,7 +39,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            AppTheme {
+            AppTheme(vm.themeMode) {
                 App(vm)
             }
         }
@@ -51,14 +57,50 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Чисто чёрная тёмная схема (как OLED-темы): фон и поверхности #000000, а карточки и диалоги чуть светлее, чтобы читались на чёрном. */
+private fun ColorScheme.asOled(): ColorScheme = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceBright = Color(0xFF2A2A2A),
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0A0A0A),
+    surfaceContainer = Color(0xFF121212),
+    surfaceContainerHigh = Color(0xFF1A1A1A),
+    surfaceContainerHighest = Color(0xFF242424),
+    // Тональное затемнение (tonalElevation) не должно подкрашивать чёрный в серый
+    surfaceTint = Color.Black,
+)
+
 @Composable
-fun AppTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun AppTheme(mode: ThemeMode, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
     val ctx = LocalContext.current
     val scheme = when {
-        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        dark -> darkColorScheme()
+        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx).asOled() else dynamicLightColorScheme(ctx)
+        dark -> darkColorScheme().asOled()
         else -> lightColorScheme()
     }
+
+    // Значки статус-бара и панели навигации и фон окна должны следовать теме приложения, а не системной
+    // (иначе при «Ясный» на тёмном телефоне значки были бы белыми на светлом фоне, и наоборот).
+    val activity = ctx as? ComponentActivity
+    val windowBg = scheme.background.toArgb()
+    SideEffect {
+        activity?.apply {
+            enableEdgeToEdge(
+                statusBarStyle = if (dark) SystemBarStyle.dark(Color.Transparent.toArgb())
+                else SystemBarStyle.light(Color.Transparent.toArgb(), Color.Transparent.toArgb()),
+                navigationBarStyle = if (dark) SystemBarStyle.dark(Color.Transparent.toArgb())
+                else SystemBarStyle.light(Color.Transparent.toArgb(), 0x80_1B_1B_1B.toInt()),
+            )
+            window.setBackgroundDrawable(ColorDrawable(windowBg))
+        }
+    }
+
     MaterialTheme(colorScheme = scheme, content = content)
 }

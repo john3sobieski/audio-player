@@ -56,8 +56,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -69,6 +71,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -148,6 +151,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -158,6 +162,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.Player
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -858,33 +864,82 @@ private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
     }
 }
 
+/**
+ * Окно выбора плейлистов для трека (сердечко в плеере работает как «плюс» в Spotify; то же окно открывает пункт «Добавить в плейлист»).
+ * Нажатие на плейлист добавляет трек или, если он там уже есть, убирает. Галочка показывает, в каких плейлистах трек уже лежит.
+ * Сверху, вне прокрутки, закреплены «Понравившиеся треки» с разделителем; ниже — остальные плейлисты в том же порядке, что и в разделе «Плейлисты».
+ */
 @Composable
 private fun AddToPlaylistDialog(vm: PlayerViewModel, track: Track) {
-    AlertDialog(
-        onDismissRequest = { vm.trackForPlaylist = null },
-        title = { Text("Добавить в плейлист") },
-        text = {
-            Column {
-                ListItem(
-                    modifier = Modifier.clickable {
+    // Порядок фиксируем при открытии: иначе при сортировке «по дате изменения» строки прыгали бы после каждого нажатия
+    val order = remember { vm.sortedPlaylists.map { it.id } }
+    val byId = vm.playlists.associateBy { it.id }
+    val favorites = byId[FAVORITES_ID]
+    val others = order.filter { it != FAVORITES_ID }.mapNotNull { byId[it] }
+    val close = { vm.trackForPlaylist = null }
+
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 560.dp).fillMaxWidth(),
+        ) {
+            Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.75f).dp)) {
+                Text(
+                    "Добавить в плейлист",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                )
+                if (favorites != null) {
+                    PlaylistPickRow(vm, favorites, track, favorite = true)
+                    HorizontalDivider()
+                }
+                LazyColumn(Modifier.weight(1f, fill = false)) {
+                    items(others, key = { it.id }) { p -> PlaylistPickRow(vm, p, track, favorite = false) }
+                }
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = {
                         vm.newPlaylistFirstTrack = track
                         vm.newPlaylistDialog = true
-                        vm.trackForPlaylist = null
-                    },
-                    leadingContent = { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary) },
-                    headlineContent = { Text("Новый плейлист…", color = MaterialTheme.colorScheme.primary) },
-                )
-                vm.playlists.forEach { p ->
-                    ListItem(
-                        modifier = Modifier.clickable { vm.addToPlaylist(p.id, track); vm.trackForPlaylist = null },
-                        headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    )
+                        close()
+                    }) {
+                        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Новый плейлист")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = close) { Text("Готово") }
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = { vm.trackForPlaylist = null }) { Text("Отмена") } },
-    )
+        }
+    }
+}
+
+/** Компактная строка плейлиста в окне выбора: название, число треков и галочка, если трек уже в этом плейлисте. */
+@Composable
+private fun PlaylistPickRow(vm: PlayerViewModel, p: Playlist, track: Track, favorite: Boolean) {
+    val n = vm.playlistTracks(p).size
+    val contains = track.uri in p.trackUris
+    Row(
+        Modifier.fillMaxWidth().clickable { vm.togglePlaylistMembership(p.id, track) }
+            .heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (favorite) Icon(Icons.Default.Favorite, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+        else Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(p.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "$n ${plural(n)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box(Modifier.size(20.dp)) {
+            if (contains) Icon(Icons.Default.Check, "В плейлисте", tint = MaterialTheme.colorScheme.primary)
+        }
+    }
 }
 
 @Composable
@@ -907,7 +962,7 @@ private fun NameDialog(title: String, initial: String, onConfirm: (String) -> Un
 private fun MiniPlayer(vm: PlayerViewModel) {
     val t = vm.currentTrack
     Surface(
-        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth().clickable { vm.openPlayer() },
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -977,8 +1032,8 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                                 )
                             }
                         }
-                        FavoriteButton(favorite = t != null && t.uri in vm.favoriteUris, enabled = t != null) {
-                            t?.let { vm.toggleFavorite(it) }
+                        SaveToPlaylistButton(saved = t != null && t.uri in vm.savedUris, enabled = t != null) {
+                            t?.let { vm.openAddToPlaylist(it) }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -1012,17 +1067,17 @@ private fun TrackInfoButton(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Сердечко справа от названия: вкл/выкл «Понравившиеся треки». Закрашено, если трек уже там. */
+/** Сердечко справа от названия (как «плюс» в Spotify): открывает окно выбора плейлистов. Закрашено, если трек уже есть хотя бы в одном плейлисте. */
 @Composable
-private fun FavoriteButton(favorite: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun SaveToPlaylistButton(saved: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val tint by animateColorAsState(
-        if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "favTint",
+        if (saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "saveTint",
     )
     IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
         Icon(
-            if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            contentDescription = if (favorite) "Убрать из понравившихся" else "Добавить в понравившиеся",
+            if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = if (saved) "Изменить плейлисты трека" else "Добавить в плейлист",
             tint = tint,
         )
     }
@@ -1403,7 +1458,7 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         // ----- Папка -----
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Папка с музыкой", style = MaterialTheme.typography.titleMedium)
-            Surface(tonalElevation = 2.dp, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
                         vm.folder?.let { folderLabel(it) } ?: "Не выбрана",
@@ -1434,6 +1489,23 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             )
         }
 
+        HorizontalDivider()
+
+        // ----- Тема -----
+        Text(
+            "Тема",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+        )
+        ThemeMode.entries.forEach { mode ->
+            ListItem(
+                modifier = Modifier.clickable { vm.changeTheme(mode) },
+                leadingContent = { RadioButton(selected = vm.themeMode == mode, onClick = null) },
+                headlineContent = { Text(mode.label) },
+                supportingContent = { Text(mode.description) },
+            )
+        }
+        Spacer(Modifier.height(8.dp))
         HorizontalDivider()
 
         // ----- Звук -----

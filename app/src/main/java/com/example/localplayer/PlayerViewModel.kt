@@ -144,9 +144,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         fav + regular
     }
 
-    /** URI треков из плейлиста «Понравившиеся треки» (для закрашенного сердечка в плеере). */
-    val favoriteUris by derivedStateOf {
-        playlists.firstOrNull { it.id == FAVORITES_ID }?.trackUris?.toHashSet() ?: emptySet<String>()
+    /** URI треков, которые есть хотя бы в одном плейлисте (для закрашенного сердечка в плеере). */
+    val savedUris by derivedStateOf {
+        HashSet<String>().also { set -> playlists.forEach { set.addAll(it.trackUris) } }
     }
 
     fun changeTrackSort(s: SortState) { trackSort = s; library.saveSort("tracks", s) }
@@ -176,6 +176,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         playlistOrder = manual.toList()
         viewModelScope.launch(Dispatchers.IO) { library.saveOrder("playlists", manual.toList()) }
         changePlaylistSort(playlistSort.copy(key = SortKey.MANUAL))
+    }
+
+    // ---------- Тема ----------
+
+    var themeMode by mutableStateOf(library.loadTheme())
+        private set
+
+    fun changeTheme(mode: ThemeMode) {
+        themeMode = mode
+        library.saveTheme(mode)
     }
 
     // ---------- Настройки звука ----------
@@ -725,9 +735,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         return listOf(Playlist(FAVORITES_ID, FAVORITES_NAME, emptyList(), now, now)) + list
     }
 
-    /** Сердечко в плеере: вкл/выкл — добавляет трек в «Понравившиеся» или убирает из них. */
-    fun toggleFavorite(track: Track) {
-        if (track.uri in favoriteUris) removeFromPlaylist(FAVORITES_ID, track) else addToPlaylist(FAVORITES_ID, track)
+    /** Сердечко в плеере (как «плюс» в Spotify): открывает окно выбора плейлистов для этого трека. */
+    fun openAddToPlaylist(track: Track) { trackForPlaylist = track }
+
+    /** В окне выбора плейлистов: нажатие добавляет трек в плейлист или, если он там уже есть, убирает. */
+    fun togglePlaylistMembership(id: String, track: Track) {
+        val p = playlists.firstOrNull { it.id == id } ?: return
+        if (track.uri in p.trackUris) removeFromPlaylist(id, track) else addToPlaylist(id, track)
     }
 
     /** Число каналов играющего файла (по данным плеера); 0 — неизвестно. */
