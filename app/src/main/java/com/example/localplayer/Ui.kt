@@ -733,7 +733,8 @@ private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
     val ctx = LocalContext.current
     val targetPx = with(LocalDensity.current) { decodeSize.roundToPx() }
     val key = "$uri@$targetPx"
-    val bmp by produceState<ImageBitmap?>(if (uri == null) null else coverCache.get(key), key) {
+    val fastScrolling = FastScroll.active
+    val bmp by produceState<ImageBitmap?>(if (uri == null) null else coverCache.get(key), key, fastScrolling) {
         if (uri == null) {
             value = null
             return@produceState
@@ -743,6 +744,8 @@ private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
             value = cached
             return@produceState
         }
+        // Пока тянут ползунок, новые обложки не грузим: иначе список дёргается и моргает
+        if (fastScrolling) return@produceState
         value = withContext(Dispatchers.IO) { coverGate.withPermit { decodeCover(ctx, uri, targetPx) } }
             ?.also { coverCache.put(key, it) }
     }
@@ -750,7 +753,7 @@ private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
         Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        Crossfade(targetState = bmp, label = "cover") { b ->
+        Crossfade(targetState = bmp, animationSpec = tween(if (fastScrolling) 0 else 200), label = "cover") { b ->
             if (b != null) Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

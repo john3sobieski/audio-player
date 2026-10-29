@@ -85,7 +85,7 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
     var smooth by remember { mutableFloatStateOf(0f) }   // сглаженное положение во время перетаскивания
 
     val scrollable by remember { derivedStateOf { state.canScrollForward || state.canScrollBackward } }
-    val listFraction by remember { derivedStateOf { scrollFraction(state) } }
+    val listFraction by remember { derivedStateOf { scrollFraction(state, headerCount) } }
     val animatedFraction by animateFloatAsState(
         listFraction,
         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
@@ -123,7 +123,7 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
             smooth += (target - smooth) * (1f - exp(-dtMs / DRAG_SMOOTHING_MS))
             if (kotlin.math.abs(smooth - target) < 0.0002f) smooth = target
             // Не дёргаем список, пока положение не изменилось
-            if (smooth != prev) scrollToFraction(state, smooth)
+            if (smooth != prev) scrollToFraction(state, smooth, headerCount)
         }
     }
 
@@ -143,7 +143,7 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = {
-                                smooth = scrollFraction(state)
+                                smooth = scrollFraction(state, headerCount)
                                 target = smooth
                                 dragging = true
                             },
@@ -191,28 +191,40 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
     }
 }
 
-/** Положение списка как число 0..1 (по индексу первого видимого элемента и сдвигу внутри него). */
-private fun scrollFraction(state: LazyListState): Float {
+/**
+ * Длина «пути» прокрутки в элементах. Считается по средней высоте строк и высоте экрана, а не по числу
+ * видимых элементов (оно прыгает вместе с заголовком списка и давало подёргивание).
+ */
+private fun scrollSpan(state: LazyListState, headerCount: Int): Float {
     val info = state.layoutInfo
     val total = info.totalItemsCount
+    val rows = info.visibleItemsInfo.filter { it.index >= headerCount }
+    if (rows.isEmpty()) return max(1f, (total - 1).toFloat())
+    val rowH = rows.sumOf { it.size }.toFloat() / rows.size
+    val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+    val fit = if (rowH > 0f) viewport / rowH else 1f
+    return max(1f, total - fit)
+}
+
+/** Положение списка как число 0..1 (по индексу первого видимого элемента и сдвигу внутри него). */
+private fun scrollFraction(state: LazyListState, headerCount: Int): Float {
+    val info = state.layoutInfo
     val visible = info.visibleItemsInfo
-    if (total == 0 || visible.isEmpty()) return 0f
+    if (info.totalItemsCount == 0 || visible.isEmpty()) return 0f
     if (!state.canScrollBackward) return 0f
     if (!state.canScrollForward) return 1f
     val first = visible.first()
     val inner = if (first.size > 0) state.firstVisibleItemScrollOffset.toFloat() / first.size else 0f
-    val span = max(1f, (total - visible.size).toFloat())
-    return ((first.index + inner) / span).coerceIn(0f, 1f)
+    return ((first.index + inner) / scrollSpan(state, headerCount)).coerceIn(0f, 1f)
 }
 
-private suspend fun scrollToFraction(state: LazyListState, fraction: Float) {
+private suspend fun scrollToFraction(state: LazyListState, fraction: Float, headerCount: Int) {
     val info = state.layoutInfo
     val total = info.totalItemsCount
     if (total == 0) return
-    val visible = info.visibleItemsInfo
-    val span = max(1f, (total - visible.size).toFloat())
-    val pos = fraction.coerceIn(0f, 1f) * span
+    val pos = fraction.coerceIn(0f, 1f) * scrollSpan(state, headerCount)
     val index = floor(pos).toInt().coerceIn(0, total - 1)
-    val itemSize = visible.firstOrNull()?.size ?: 0
+    val itemSize = info.visibleItemsInfo.firstOrNull { it.index == index }?.size
+        ?: info.visibleItemsInfo.firstOrNull { it.index >= headerCount }?.size ?: 0
     state.scrollToItem(index, ((pos - index) * itemSize).roundToInt())
 }
