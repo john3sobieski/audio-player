@@ -819,9 +819,7 @@ private fun MiniPlayer(vm: PlayerViewModel) {
                 Text(t?.artist ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = { vm.togglePlay() }) {
-                Crossfade(targetState = vm.uiPlaying, label = "miniPlay") { playing ->
-                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей")
-                }
+                Icon(if (vm.uiPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей")
             }
             IconButton(onClick = { vm.next() }) { Icon(Icons.Default.SkipNext, "Следующий") }
         }
@@ -1200,9 +1198,7 @@ private fun PlayerControls(vm: PlayerViewModel) {
         }
         IconButton(onClick = { vm.prev() }) { Icon(Icons.Default.SkipPrevious, "Предыдущий", Modifier.size(36.dp)) }
         FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(72.dp)) {
-            Crossfade(targetState = vm.uiPlaying, label = "bigPlay") { playing ->
-                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей", Modifier.size(40.dp))
-            }
+            Icon(if (vm.uiPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей", Modifier.size(40.dp))
         }
         IconButton(onClick = { vm.next() }) { Icon(Icons.Default.SkipNext, "Следующий", Modifier.size(36.dp)) }
         IconButton(onClick = { vm.cycleRepeat() }) {

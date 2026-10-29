@@ -413,6 +413,21 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      */
     var uiPlaying by mutableStateOf(false)
         private set
+
+    private var uiTarget: Boolean? = null
+    private var uiTargetJob: Job? = null
+
+    /** Кнопка меняется мгновенно; [uiTarget] живёт не дольше 2 с, после чего кнопка снова следует за плеером. */
+    private fun setUiPlaying(value: Boolean) {
+        uiPlaying = value
+        uiTarget = value
+        uiTargetJob?.cancel()
+        uiTargetJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(2000)
+            uiTarget = null
+            uiPlaying = isPlaying
+        }
+    }
     var shuffle by mutableStateOf(false)
         private set
     var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
@@ -423,7 +438,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             this@PlayerViewModel.isPlaying = isPlaying
-            uiPlaying = isPlaying
+            // Пока ждём реакции плеера на нажатие, устаревшие события не должны откатывать кнопку назад
+            val want = uiTarget
+            if (want == null || want == isPlaying) {
+                uiTarget = null
+                uiPlaying = isPlaying
+            }
         }
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             uiPlaying = isPlaying
@@ -554,7 +574,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.setMediaItems(list.map { it.toItem() }, index.coerceIn(0, list.lastIndex), 0L)
         c.prepare()
         c.play()
-        uiPlaying = true
+        setUiPlaying(true)
     }
 
     fun playShuffled(list: List<Track>) {
@@ -566,10 +586,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val c = controller ?: return
         // Ориентируемся на то, что видит пользователь: во время затухания c.isPlaying ещё true
         if (uiPlaying) {
-            uiPlaying = false
+            setUiPlaying(false)
             c.pause()
         } else {
-            uiPlaying = true
+            setUiPlaying(true)
             c.play()
         }
     }
