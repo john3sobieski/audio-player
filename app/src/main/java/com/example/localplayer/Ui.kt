@@ -14,6 +14,9 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.TopAppBarDefaults
@@ -62,6 +65,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
@@ -331,10 +335,13 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
     // 0 -> 1: заголовок уезжает влево и гаснет, на его месте раскрывается поле поиска
     val shift by animateFloatAsState(if (searching) 1f else 0f, tween(320), label = "titleShift")
     val barColors = MaterialTheme.colorScheme
+    // У самого TopAppBar цвет фона внутри анимируется собственной пружиной (поверх нашей анимации темы),
+    // из-за чего плашка запаздывала. Поэтому фон рисуем сами, а контейнер TopAppBar делаем прозрачным.
+    Surface(color = barColors.surface) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = barColors.surface,
-            scrolledContainerColor = barColors.surface,
+            containerColor = Color.Transparent,
+            scrolledContainerColor = Color.Transparent,
             navigationIconContentColor = barColors.onSurface,
             titleContentColor = barColors.onSurface,
             actionIconContentColor = barColors.onSurfaceVariant,
@@ -387,6 +394,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
             }
         },
     )
+    }
 }
 
 /** Поле поиска в верхней панели. Ищет по текущей вкладке: плейлисты, альбомы или треки. */
@@ -429,26 +437,51 @@ private fun SearchField(vm: PlayerViewModel) {
 @Composable
 private fun LibraryNavBar(vm: PlayerViewModel) {
     val cs = MaterialTheme.colorScheme
-    val itemColors = NavigationBarItemDefaults.colors(
-        selectedIconColor = cs.onSecondaryContainer,
-        selectedTextColor = cs.onSurface,
-        indicatorColor = cs.secondaryContainer,
-        unselectedIconColor = cs.onSurfaceVariant,
-        unselectedTextColor = cs.onSurfaceVariant,
+    val items = listOf(
+        "Плейлисты" to Icons.AutoMirrored.Filled.PlaylistPlay,
+        "Альбомы" to Icons.Default.Album,
+        "Треки" to Icons.Default.LibraryMusic,
     )
-    NavigationBar(containerColor = cs.surfaceContainer) {
-        NavigationBarItem(
-            selected = vm.tab == 0, onClick = { vm.openTab(0) },
-            icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) }, label = { Text("Плейлисты") }, colors = itemColors,
-        )
-        NavigationBarItem(
-            selected = vm.tab == 1, onClick = { vm.openTab(1) },
-            icon = { Icon(Icons.Default.Album, null) }, label = { Text("Альбомы") }, colors = itemColors,
-        )
-        NavigationBarItem(
-            selected = vm.tab == 2, onClick = { vm.openTab(2) },
-            icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Треки") }, colors = itemColors,
-        )
+    Surface(color = cs.surfaceContainer) {
+        BoxWithConstraints(Modifier.navigationBarsPadding().fillMaxWidth().height(80.dp)) {
+            val itemW = maxWidth / items.size
+            // Одна общая «плашка» выбранного раздела: при смене раздела она не исчезает, а переезжает на пружине
+            val pillX by animateDpAsState(
+                itemW * vm.tab + (itemW - 64.dp) / 2,
+                spring(dampingRatio = 0.72f, stiffness = 420f),
+                label = "navPill",
+            )
+            Box(
+                Modifier
+                    .offset(x = pillX, y = 12.dp)
+                    .size(width = 64.dp, height = 32.dp)
+                    .background(cs.secondaryContainer, RoundedCornerShape(16.dp)),
+            )
+            Row(Modifier.fillMaxSize()) {
+                items.forEachIndexed { i, (label, icon) ->
+                    val selected = vm.tab == i
+                    val iconColor by animateColorAsState(if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant, tween(220), label = "navIcon")
+                    val textColor by animateColorAsState(if (selected) cs.onSurface else cs.onSurfaceVariant, tween(220), label = "navText")
+                    val iconScale by animateFloatAsState(if (selected) 1.12f else 1f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "navScale")
+                    val src = remember { MutableInteractionSource() }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .pressScale(src, 0.93f)
+                            .clickable(interactionSource = src, indication = null, role = Role.Tab) { vm.openTab(i) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(Modifier.height(12.dp))
+                        Box(Modifier.size(width = 64.dp, height = 32.dp), contentAlignment = Alignment.Center) {
+                            Icon(icon, null, Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale }, tint = iconColor)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = textColor, maxLines = 1)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -476,7 +509,8 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         val dragging by pagerState.interactionSource.collectIsDraggedAsState()
         LaunchedEffect(dragging) { if (dragging) pending = -1 }
         LaunchedEffect(vm.tab) {
-            if (pagerState.currentPage != vm.tab || pagerState.targetPage != vm.tab) {
+            // Если пейджер уже направляется на эту вкладку (например, при свайпе), анимацию не запускаем
+            if (pagerState.targetPage != vm.tab) {
                 pending = vm.tab
                 pagerState.animateScrollToPage(vm.tab, animationSpec = tween(300, easing = FastOutSlowInEasing))
             }
@@ -484,6 +518,13 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         LaunchedEffect(pagerState) {
             snapshotFlow { pagerState.settledPage }.collect { page ->
                 if (page == pending) pending = -1 else if (pending == -1 && page != vm.tab) vm.openTab(page)
+            }
+        }
+        // При свайпе кнопка нижней панели переключается сразу, как только пейджер выбрал новую страницу,
+        // не дожидаясь конца анимации
+        LaunchedEffect(pagerState) {
+            snapshotFlow { pagerState.targetPage }.collect { page ->
+                if (pending == -1 && page != vm.tab) vm.openTab(page)
             }
         }
         HorizontalPager(

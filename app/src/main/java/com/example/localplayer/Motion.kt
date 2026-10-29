@@ -545,7 +545,7 @@ private fun menuIcon(label: String): ImageVector = when {
 /** Цвета темы перетекают друг в друга, а не меняются скачком (используется при переключении светлой/тёмной темы). */
 @Composable
 fun ColorScheme.animated(): ColorScheme {
-    val spec = tween<Color>(500)
+    val spec = tween<Color>(360)
     @Composable
     fun a(c: Color): Color = animateColorAsState(c, spec, label = "theme").value
     return copy(
