@@ -80,11 +80,13 @@ fun AppTheme(mode: ThemeMode, content: @Composable () -> Unit) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
     val ctx = LocalContext.current
-    val scheme = when {
+    val target = when {
         Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx).asOled() else dynamicLightColorScheme(ctx)
         dark -> darkColorScheme().asOled()
         else -> lightColorScheme()
     }
+    // При смене темы цвета плавно перетекают, а не меняются скачком
+    val scheme = target.animated()
 
     // Значки статус-бара и панели навигации и фон окна должны следовать теме приложения, а не системной
     // (иначе при «Ясный» на тёмном телефоне значки были бы белыми на светлом фоне, и наоборот).

@@ -14,6 +14,9 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.tween
@@ -31,6 +34,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -76,7 +81,11 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -98,6 +107,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TextField
@@ -127,6 +137,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -434,21 +445,23 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         AnimatedVisibility(visible = vm.scanning) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
         }
-        AnimatedContent(
-            targetState = vm.tab,
+        // Вкладки — страницы горизонтального пейджера: переход прерывается и перенаправляется на лету,
+        // поэтому при быстром переключении страницы не накладываются друг на друга. Работает и свайп.
+        val pagerState = rememberPagerState(initialPage = vm.tab) { 3 }
+        LaunchedEffect(vm.tab) {
+            if (pagerState.currentPage != vm.tab || pagerState.targetPage != vm.tab) pagerState.animateScrollToPage(vm.tab)
+        }
+        LaunchedEffect(pagerState) {
+            snapshotFlow { pagerState.settledPage }.collect { if (it != vm.tab) vm.openTab(it) }
+        }
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            transitionSpec = {
-                val dir = if (targetState > initialState) 1 else -1
-                ContentTransform(
-                    slideInHorizontally(tween(300)) { it * dir / 3 } + fadeIn(tween(250)),
-                    slideOutHorizontally(tween(300)) { -it * dir / 3 },
-                )
-            },
-            label = "tabs",
-        ) { tab ->
-            // Непрозрачный фон: входящая вкладка полностью закрывает уходящую, поэтому той не нужно затухание
+            beyondViewportPageCount = 0,
+            key = { it },
+        ) { page ->
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                when (tab) {
+                when (page) {
                     0 -> PlaylistsTab(vm)
                     1 -> AlbumsTab(vm)
                     else -> TracksTab(vm)
@@ -568,7 +581,8 @@ private fun AlbumsTab(vm: PlayerViewModel) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(list, key = { _, a -> a.key }) { _, a ->
                 ListItem(
-                    modifier = reorderableItem(reorder, a.key).clickable { vm.push(Screen.AlbumScreen(a.key)) },
+                    modifier = reorderableItem(reorder, a.key).pressableRow({ vm.push(Screen.AlbumScreen(a.key)) }),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Cover(a.tracks.firstOrNull()?.uri, 56.dp) },
                     headlineContent = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = {
@@ -608,7 +622,8 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             item {
                 ListItem(
-                    modifier = Modifier.clickable { vm.newPlaylistFirstTrack = null; vm.newPlaylistDialog = true },
+                    modifier = Modifier.pressableRow({ vm.newPlaylistFirstTrack = null; vm.newPlaylistDialog = true }),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary) },
                     headlineContent = { Text("Новый плейлист", color = MaterialTheme.colorScheme.primary) },
                 )
@@ -622,7 +637,8 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
             itemsIndexed(list, key = { _, p -> p.id }) { _, p ->
                 val n = vm.playlistTracks(p).size
                 ListItem(
-                    modifier = reorderableItem(reorder, p.id).clickable { vm.push(Screen.PlaylistScreen(p.id)) },
+                    modifier = reorderableItem(reorder, p.id).pressableRow({ vm.push(Screen.PlaylistScreen(p.id)) }),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = {
                         if (p.id == FAVORITES_ID) Icon(Icons.Default.Favorite, null, tint = MaterialTheme.colorScheme.primary)
                         else Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null)
@@ -720,12 +736,11 @@ private fun TrackListScreen(
                 Text(header, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { vm.play(list, 0) }, enabled = list.isNotEmpty()) {
-                        Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Играть")
-                    }
-                    FilledTonalButton(onClick = { vm.playShuffled(list) }, enabled = list.isNotEmpty()) {
-                        Icon(Icons.Default.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Вперемешку")
-                    }
+                    ActionPill("Играть", Icons.Default.PlayArrow, primary = true, enabled = list.isNotEmpty(), onClick = { vm.play(list, 0) })
+                    ActionPill(
+                        "Вперемешку", Icons.Default.Shuffle, primary = false, enabled = list.isNotEmpty(),
+                        onClick = { vm.playShuffled(list) }, spin = true,
+                    )
                 }
             }
         }
@@ -762,9 +777,13 @@ private fun TrackRow(
     modifier: Modifier = Modifier,
     showCover: Boolean = true,
 ) {
-    val color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    val color by animateColorAsState(
+        if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        tween(300), label = "trackColor",
+    )
     ListItem(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.pressableRow(onClick, highlighted = current),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Порядковый номер (до 4–5 цифр влезает без переноса); у играющего трека вместо него треугольник
@@ -799,17 +818,7 @@ private fun TrackRow(
 }
 
 @Composable
-private fun RowMenu(items: List<Pair<String, () -> Unit>>) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { open = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Меню") }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            items.forEach { (label, action) ->
-                DropdownMenuItem(text = { Text(label) }, onClick = { open = false; action() })
-            }
-        }
-    }
-}
+private fun RowMenu(items: List<Pair<String, () -> Unit>>) = AppMenu(items)
 
 /** Размер обложки в списках треков (меньше, чем 56 dp в «Альбомах»). */
 private val TRACK_COVER_SIZE = 44.dp
@@ -971,10 +980,9 @@ private fun MiniPlayer(vm: PlayerViewModel) {
                 Text(t?.title ?: "…", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                 Text(t?.artist ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = { vm.togglePlay() }) {
-                Icon(if (vm.uiPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей")
-            }
-            IconButton(onClick = { vm.next() }) { Icon(Icons.Default.SkipNext, "Следующий") }
+            PlayPauseButton(vm.uiPlaying, { vm.togglePlay() }, buttonSize = 40.dp, iconSize = 20.dp)
+            Spacer(Modifier.width(4.dp))
+            SkipButton(Icons.Default.SkipNext, "Следующий", 1, { vm.next() }, boxSize = 44.dp, iconSize = 26.dp)
         }
     }
 }
@@ -1032,7 +1040,7 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                                 )
                             }
                         }
-                        SaveToPlaylistButton(saved = t != null && t.uri in vm.savedUris, enabled = t != null) {
+                        SaveToPlaylistButton(saved = t != null && t.uri in vm.savedUris, trackKey = t?.uri, enabled = t != null) {
                             t?.let { vm.openAddToPlaylist(it) }
                         }
                     }
@@ -1069,18 +1077,12 @@ private fun TrackInfoButton(enabled: Boolean, onClick: () -> Unit) {
 
 /** Сердечко справа от названия (как «плюс» в Spotify): открывает окно выбора плейлистов. Закрашено, если трек уже есть хотя бы в одном плейлисте. */
 @Composable
-private fun SaveToPlaylistButton(saved: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val tint by animateColorAsState(
-        if (saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "saveTint",
+private fun SaveToPlaylistButton(saved: Boolean, trackKey: Any?, enabled: Boolean, onClick: () -> Unit) {
+    AnimatedHeart(
+        saved = saved, trackKey = trackKey, enabled = enabled,
+        description = if (saved) "Изменить плейлисты трека" else "Добавить в плейлист",
+        onClick = onClick,
     )
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
-        Icon(
-            if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            contentDescription = if (saved) "Изменить плейлисты трека" else "Добавить в плейлист",
-            tint = tint,
-        )
-    }
 }
 
 /** Окно «О треке»: теги и свойства файла (без пути к папке). */
@@ -1421,29 +1423,24 @@ private fun SeekBar(vm: PlayerViewModel, durationMs: Long) {
 
 @Composable
 private fun PlayerControls(vm: PlayerViewModel) {
-    val shuffleTint by animateColorAsState(
-        if (vm.shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "shuffleTint",
-    )
-    val repeatTint by animateColorAsState(
-        if (vm.repeat != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "repeatTint",
-    )
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { vm.toggleShuffle() }) {
-            Icon(Icons.Default.Shuffle, "Перемешать", tint = shuffleTint)
+        ToggleIconButton(active = vm.shuffle, stateKey = vm.shuffle, onClick = { vm.toggleShuffle() }) { tint ->
+            Icon(Icons.Default.Shuffle, "Перемешать", tint = tint)
         }
-        IconButton(onClick = { vm.prev() }) { Icon(Icons.Default.SkipPrevious, "Предыдущий", Modifier.size(36.dp)) }
-        FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(72.dp)) {
-            Icon(if (vm.uiPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Пауза/плей", Modifier.size(40.dp))
-        }
-        IconButton(onClick = { vm.next() }) { Icon(Icons.Default.SkipNext, "Следующий", Modifier.size(36.dp)) }
-        IconButton(onClick = { vm.cycleRepeat() }) {
-            Icon(
-                if (vm.repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                "Повтор",
-                tint = repeatTint,
-            )
+        SkipButton(Icons.Default.SkipPrevious, "Предыдущий", -1, { vm.prev() })
+        PlayPauseButton(vm.uiPlaying, { vm.togglePlay() }, buttonSize = 72.dp, iconSize = 34.dp)
+        SkipButton(Icons.Default.SkipNext, "Следующий", 1, { vm.next() })
+        ToggleIconButton(active = vm.repeat != Player.REPEAT_MODE_OFF, stateKey = vm.repeat, onClick = { vm.cycleRepeat() }) { tint ->
+            AnimatedContent(
+                targetState = vm.repeat == Player.REPEAT_MODE_ONE,
+                transitionSpec = {
+                    (scaleIn(spring(dampingRatio = 0.6f, stiffness = 500f)) + fadeIn(tween(120))) togetherWith
+                        (scaleOut(tween(100)) + fadeOut(tween(100)))
+                },
+                label = "repeatIcon",
+            ) { one ->
+                Icon(if (one) Icons.Default.RepeatOne else Icons.Default.Repeat, "Повтор", tint = tint)
+            }
         }
     }
 }
@@ -1497,14 +1494,15 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
         )
-        ThemeMode.entries.forEach { mode ->
-            ListItem(
-                modifier = Modifier.clickable { vm.changeTheme(mode) },
-                leadingContent = { RadioButton(selected = vm.themeMode == mode, onClick = null) },
-                headlineContent = { Text(mode.label) },
-                supportingContent = { Text(mode.description) },
-            )
-        }
+        val themeModes = ThemeMode.entries
+        SlidingSelector(
+            labels = themeModes.map { it.label },
+            icons = listOf(Icons.Default.LightMode, Icons.Default.DarkMode, Icons.Default.SettingsBrightness),
+            selected = themeModes.indexOf(vm.themeMode),
+            onSelect = { vm.changeTheme(themeModes[it]) },
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        SelectorCaption(vm.themeMode.description)
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
 
@@ -1682,9 +1680,21 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
             )
-            EqModeRow(vm, EqMode.OFF, "Выключен", "Звук без обработки")
-            EqModeRow(vm, EqMode.GLOBAL, "Для всех треков", "Одна настройка действует на все треки")
-            EqModeRow(vm, EqMode.PER_TRACK, "Для каждого трека", "Своя настройка у каждого трека, запоминается навсегда")
+            val eqModes = listOf(EqMode.OFF, EqMode.GLOBAL, EqMode.PER_TRACK)
+            SlidingSelector(
+                labels = listOf("Выключен", "Для всех", "Для каждого"),
+                icons = listOf(Icons.Default.PowerSettingsNew, Icons.Default.Equalizer, Icons.Default.MusicNote),
+                selected = eqModes.indexOf(vm.eqMode),
+                onSelect = { vm.changeEqMode(eqModes[it]) },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            SelectorCaption(
+                when (vm.eqMode) {
+                    EqMode.OFF -> "Звук без обработки"
+                    EqMode.GLOBAL -> "Одна настройка действует на все треки"
+                    EqMode.PER_TRACK -> "Своя настройка у каждого трека, запоминается навсегда"
+                },
+            )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
         } else {
             Spacer(Modifier.height(8.dp))
@@ -1855,16 +1865,6 @@ private fun PlayerEqualizerScreen(vm: PlayerViewModel) {
             }
         }
     }
-}
-
-@Composable
-private fun EqModeRow(vm: PlayerViewModel, mode: EqMode, title: String, subtitle: String) {
-    ListItem(
-        modifier = Modifier.clickable { vm.changeEqMode(mode) },
-        leadingContent = { RadioButton(selected = vm.eqMode == mode, onClick = null) },
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
-    )
 }
 
 /**

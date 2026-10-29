@@ -15,6 +15,7 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
 - **Player controls:** play/pause, next/previous, seek, shuffle, repeat (off / all / one).
 - **Cover art** read from embedded tags and cached on disk in a space-saving way (small WebP thumbnails, one copy per album, no size limit, cleaned of removed tracks), so covers load instantly after restarting the app.
 - **Settings footer:** *Clear app cache* (two taps to confirm, shows the current cache size) and *Reset to factory settings* (confirmation dialog: reset only settings, or settings and cache). The reset restores sound settings, all equalizers and sorting; playlists and the chosen folder are kept.
+- **Animations** (one shared motion language, see `Motion.kt`): library tabs are pager pages (no overlapping on fast switching, swipe works), spring press feedback instead of Android ripples, play/pause shape and icon morph, nudging prev/next, toggle pop for shuffle/repeat, heart burst, sliding selectors for theme and equalizer mode, rounded popup menu, smooth theme colour transition.
 - **Search** (magnifier left of the gear): finds playlists, albums or tracks depending on the open tab. Partial and whole-word matches, case-insensitive, `ё`=`е`; several words must all match.
 - **Heart and info buttons** next to the track title in the player: the heart works like the "+" in Spotify and opens a compact window with your playlists. *Liked tracks* are pinned at the top (with a divider below), the other playlists follow in the same order as in the **Playlists** tab. Tap a playlist to add the track or remove it again; a check mark shows where the track already is, and the heart is filled when the track is in at least one playlist. The round **i** button opens a window with all track details (tags, format, bitrate, sample rate, channels, size, file date, date added to the player, cover size; the folder path is not shown).
 - **Theme** (Settings): *Light*, *Dark* (true black, for OLED screens) or *System* (follows the phone's dark mode; the default).
@@ -92,7 +93,8 @@ This repository includes a workflow in `.github/workflows/build.yml`.
 ```
 app/src/main/java/com/example/localplayer/
 ├── MainActivity.kt        # Entry point, theme, notification permission
-├── Ui.kt                  # All screens and animations (Compose)
+├── Ui.kt                  # All screens (Compose)
+├── Motion.kt              # Shared animation system: spring press feedback, play/pause morph, heart burst, sliding selector, popup menu, animated theme colors
 ├── TimeStretch.kt         # Speed change without pitch change (phase vocoder)
 ├── ListTools.kt           # Long-press drag reordering and the sort bar
 ├── PlayerViewModel.kt     # App state, playlists, player control
