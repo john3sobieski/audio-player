@@ -434,6 +434,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    var shuffle by mutableStateOf(false)
+        private set
+    var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
+        private set
+
     val currentTrack: Track? get() = currentId?.let { trackByUri[it] }
 
     private val listener = object : Player.Listener {
