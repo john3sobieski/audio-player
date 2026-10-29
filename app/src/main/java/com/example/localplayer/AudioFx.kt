@@ -230,6 +230,16 @@ object AudioFx {
         refresh()
     }
 
+    fun setGlobalGains(g: FloatArray) {
+        globalGains = g.copyOf()
+        refresh()
+    }
+
+    fun setTrackGains(uri: String, g: FloatArray) {
+        trackGains[key(uri)] = g.copyOf()
+        refresh()
+    }
+
     fun resetGlobal() {
         globalGains = ZERO
         refresh()

@@ -44,6 +44,11 @@ class MainActivity : ComponentActivity() {
         // Каждый вход в приложение (запуск или возврат из фона): проверяем папку на новые и удалённые файлы
         vm.refresh()
     }
+
+    override fun onStop() {
+        super.onStop()
+        CoverStore.flush()
+    }
 }
 
 @Composable

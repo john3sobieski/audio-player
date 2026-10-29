@@ -13,6 +13,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +30,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -66,7 +72,9 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
@@ -87,6 +95,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -125,6 +136,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -192,6 +208,7 @@ fun App(vm: PlayerViewModel) {
     val depth = vm.stack.count { it !is Screen.Player && it !is Screen.PlayerEqualizer }
 
     BackHandler(enabled = vm.screen != null) { vm.pop() }
+    BackHandler(enabled = vm.searchOpen && vm.screen == null) { vm.closeSearch() }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.selectFolder(uri)
@@ -287,14 +304,30 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
         is Screen.AlbumScreen -> vm.albums.find { it.key == screen.key }?.name ?: ""
         is Screen.PlaylistScreen -> vm.playlists.find { it.id == screen.id }?.name ?: ""
     }
+    val searching = vm.searchOpen && screen == null
+    // 0 -> 1: заголовок уезжает влево и гаснет, на его месте раскрывается поле поиска
+    val shift by animateFloatAsState(if (searching) 1f else 0f, tween(320), label = "titleShift")
     TopAppBar(
         title = {
-            AnimatedContent(
-                targetState = title,
-                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-                label = "title",
-            ) { text ->
-                Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                AnimatedContent(
+                    targetState = title,
+                    modifier = Modifier.graphicsLayer {
+                        translationX = -(size.width + 64.dp.toPx()) * shift
+                        alpha = 1f - shift
+                    },
+                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                    label = "title",
+                ) { text ->
+                    Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                AnimatedVisibility(
+                    visible = searching,
+                    enter = fadeIn(tween(250, delayMillis = 120)) + expandHorizontally(tween(320), expandFrom = Alignment.End),
+                    exit = fadeOut(tween(150)) + shrinkHorizontally(tween(250), shrinkTowards = Alignment.End),
+                ) {
+                    SearchField(vm)
+                }
             }
         },
         navigationIcon = {
@@ -305,12 +338,60 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
             }
         },
         actions = {
+            // Лупа стоит слева от шестерёнки; при открытом поиске превращается в крестик
+            AnimatedVisibility(visible = screen == null && vm.folder != null) {
+                IconButton(onClick = { if (searching) vm.closeSearch() else vm.openSearch() }) {
+                    Crossfade(targetState = searching, label = "searchIcon") { isOpen ->
+                        Icon(
+                            if (isOpen) Icons.Default.Close else Icons.Default.Search,
+                            contentDescription = if (isOpen) "Закрыть поиск" else "Поиск",
+                        )
+                    }
+                }
+            }
             AnimatedVisibility(visible = screen == null) {
                 IconButton(onClick = { vm.push(Screen.Settings) }) {
                     Icon(Icons.Default.Settings, contentDescription = "Настройки")
                 }
             }
         },
+    )
+}
+
+/** Поле поиска в верхней панели. Ищет по текущей вкладке: плейлисты, альбомы или треки. */
+@Composable
+private fun SearchField(vm: PlayerViewModel) {
+    val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(Unit) {
+        delay(150)
+        runCatching { focus.requestFocus() }
+    }
+    TextField(
+        value = vm.searchQuery,
+        onValueChange = { vm.searchQuery = it },
+        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+        singleLine = true,
+        placeholder = {
+            Text(
+                when (vm.tab) {
+                    0 -> "Поиск плейлистов"
+                    1 -> "Поиск альбомов"
+                    else -> "Поиск треков"
+                },
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        },
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+        ),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
     )
 }
 
@@ -412,14 +493,16 @@ private fun TracksTab(vm: PlayerViewModel) {
         EmptyHint(if (vm.scanning) "Сканирую папку…" else "В выбранной папке нет аудиофайлов")
         return
     }
-    val sorted = vm.sortedTracks
+    val query = vm.activeQuery
+    val all = vm.sortedTracks
+    val sorted = remember(all, query) { if (query.isEmpty()) all else all.filter { it.matches(query) } }
     val working = remember { mutableStateListOf<Track>() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val reorder = rememberReorderState(
         listState,
         ReorderCallbacks(
-            canDrag = { it is String },
+            canDrag = { it is String && vm.activeQuery.isEmpty() }, // во время поиска порядок не меняем
             onStart = { working.clear(); working.addAll(sorted) },
             onMove = { from, to -> working.moveByKey(from, to) { it.uri } },
             onEnd = { vm.commitTrackOrder(working.map { it.uri }) },
@@ -429,6 +512,7 @@ private fun TracksTab(vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         SortBar(vm.trackSort, TRACK_SORT_KEYS, { vm.changeTrackSort(it); scope.launch { listState.scrollToItem(0) } })
+        if (list.isEmpty()) EmptyHint("Ничего не найдено") else
         FastScrollContainer(listState) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(list, key = { _, t -> t.uri }) { i, t ->
@@ -452,7 +536,9 @@ private fun AlbumsTab(vm: PlayerViewModel) {
         EmptyHint(if (vm.scanning) "Сканирую папку…" else "Альбомов пока нет")
         return
     }
-    val sorted = vm.sortedAlbums
+    val query = vm.activeQuery
+    val all = vm.sortedAlbums
+    val sorted = remember(all, query) { if (query.isEmpty()) all else all.filter { it.matches(query) } }
     val working = remember { mutableStateListOf<Album>() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -460,7 +546,7 @@ private fun AlbumsTab(vm: PlayerViewModel) {
         listState,
         ReorderCallbacks(
             // «Без альбома» закреплён внизу и не перетаскивается
-            canDrag = { it is String && !it.startsWith(NO_ALBUM + "\u0000") },
+            canDrag = { it is String && !it.startsWith(NO_ALBUM + "\u0000") && vm.activeQuery.isEmpty() },
             onStart = { working.clear(); working.addAll(sorted) },
             onMove = { from, to -> working.moveByKey(from, to) { it.key } },
             onEnd = { vm.commitAlbumOrder(working.map { it.key }) },
@@ -470,6 +556,7 @@ private fun AlbumsTab(vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         SortBar(vm.albumSort, ALBUM_SORT_KEYS, { vm.changeAlbumSort(it); scope.launch { listState.scrollToItem(0) } })
+        if (list.isEmpty()) EmptyHint("Ничего не найдено") else
         FastScrollContainer(listState) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(list, key = { _, a -> a.key }) { _, a ->
@@ -489,14 +576,16 @@ private fun AlbumsTab(vm: PlayerViewModel) {
 
 @Composable
 private fun PlaylistsTab(vm: PlayerViewModel) {
-    val sorted = vm.sortedPlaylists
+    val query = vm.activeQuery
+    val all = vm.sortedPlaylists
+    val sorted = remember(all, query) { if (query.isEmpty()) all else all.filter { it.matches(query) } }
     val working = remember { mutableStateListOf<Playlist>() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val reorder = rememberReorderState(
         listState,
         ReorderCallbacks(
-            canDrag = { it is String && it != FAVORITES_ID }, // «Понравившиеся треки» закреплены вверху
+            canDrag = { it is String && it != FAVORITES_ID && vm.activeQuery.isEmpty() }, // «Понравившиеся треки» закреплены вверху
             onStart = { working.clear(); working.addAll(sorted) },
             onMove = { from, to -> working.moveByKey(from, to) { it.id } },
             onEnd = { vm.commitPlaylistOrder(working.map { it.id }) },
@@ -520,6 +609,8 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
             }
             if (vm.playlists.isEmpty()) {
                 item { Text("Плейлистов пока нет", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            } else if (list.isEmpty()) {
+                item { Text("Ничего не найдено", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             itemsIndexed(list, key = { _, p -> p.id }) { _, p ->
                 val n = vm.playlistTracks(p).size
@@ -729,36 +820,16 @@ private val PLAYER_CONTENT_RESERVE = 400.dp
 /** Не больше двух одновременных декодирований обложек, чтобы прокрутка списка не забивала процессор. */
 private val coverGate = Semaphore(2)
 
-/** Кэш обложек в памяти: повторное открытие плеера и прокрутка списков не декодируют картинки заново. */
+/** Кэш обложек в памяти; поверх него работает дисковый кэш [CoverStore] (переживает перезапуск приложения). */
 private val coverCache = object : LruCache<String, ImageBitmap>(24 * 1024 * 1024) {
     override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
-}
-
-/** Декодирует встроенную обложку сразу в нужном размере (а не в полном разрешении), чтобы не нагружать память и GPU. */
-private fun decodeCover(ctx: Context, uri: String, targetPx: Int): ImageBitmap? {
-    val r = MediaMetadataRetriever()
-    return try {
-        r.setDataSource(ctx, Uri.parse(uri))
-        val data = r.embeddedPicture ?: return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
-        val minSide = minOf(bounds.outWidth, bounds.outHeight)
-        var sample = 1
-        while (minSide / (sample * 2) >= targetPx) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        BitmapFactory.decodeByteArray(data, 0, data.size, opts)?.asImageBitmap()
-    } catch (_: Exception) {
-        null
-    } finally {
-        runCatching { r.release() }
-    }
 }
 
 @Composable
 private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
     val ctx = LocalContext.current
     val targetPx = with(LocalDensity.current) { decodeSize.roundToPx() }
-    val key = "$uri@$targetPx"
+    val key = "$uri@${CoverStore.tierPx(targetPx)}"
     val fastScrolling = FastScroll.active
     val bmp by produceState<ImageBitmap?>(if (uri == null) null else coverCache.get(key), key, fastScrolling) {
         if (uri == null) {
@@ -772,7 +843,7 @@ private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
         }
         // Пока тянут ползунок, новые обложки не грузим: иначе список дёргается и моргает
         if (fastScrolling) return@produceState
-        value = withContext(Dispatchers.IO) { coverGate.withPermit { decodeCover(ctx, uri, targetPx) } }
+        value = withContext(Dispatchers.IO) { coverGate.withPermit { CoverStore.load(ctx, uri, targetPx) } }
             ?.also { coverCache.put(key, it) }
     }
     Box(
@@ -1506,6 +1577,28 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
         } else {
             Spacer(Modifier.height(12.dp))
         }
+
+        // Пресеты: работают так же, как ручная настройка (в режиме «для каждого трека» — только в плеере)
+        Text(
+            "Пресеты",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+        )
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            EQ_PRESETS.forEach { p ->
+                val selected = (0 until AudioFx.BANDS).all { abs(gains[it] - p.gains[it]) < 0.05f }
+                FilterChip(
+                    selected = selected,
+                    onClick = { vm.applyEqPreset(p, fromPlayer) },
+                    enabled = editable,
+                    label = { Text(p.name) },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
 
         // 12 вертикальных ползунков
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {

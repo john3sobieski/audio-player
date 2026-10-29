@@ -349,6 +349,31 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Применяет пресет по тем же правилам, что и ручное движение ползунков (см. [setEqBand]). */
+    fun applyEqPreset(preset: EqPreset, fromPlayer: Boolean) {
+        val g = FloatArray(AudioFx.BANDS) { preset.gains[it].coerceIn(-AudioFx.EQ_RANGE_DB, AudioFx.EQ_RANGE_DB) }
+        when (eqMode) {
+            EqMode.GLOBAL -> {
+                val id = currentId
+                if (fromPlayer && id != null && AudioFx.isGlobalExcluded(id)) {
+                    AudioFx.setTrackGains(id, g)
+                    trackRev++
+                } else {
+                    AudioFx.setGlobalGains(g)
+                    globalGains = AudioFx.globalGains.toList()
+                }
+            }
+            EqMode.PER_TRACK -> {
+                if (!fromPlayer) return // кривые отдельных треков меняются только из плеера
+                val id = currentId ?: return
+                AudioFx.setTrackGains(id, g)
+                trackRev++
+            }
+            EqMode.OFF -> return
+        }
+        commitSound()
+    }
+
     fun resetEq(fromPlayer: Boolean) {
         when (eqMode) {
             EqMode.GLOBAL -> {
@@ -386,6 +411,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Навигация ----------
     var tab by mutableIntStateOf(0)
+    // ---------- Поиск (на вкладках библиотеки) ----------
+    var searchOpen by mutableStateOf(false)
+        private set
+    var searchQuery by mutableStateOf("")
+
+    /** Текущий запрос; пустой, если поиск закрыт. */
+    val activeQuery: String get() = if (searchOpen) searchQuery.trim() else ""
+
+    fun openSearch() { searchOpen = true }
+    fun closeSearch() { searchOpen = false; searchQuery = "" }
+
     val stack = mutableStateListOf<Screen>()
     val screen: Screen? get() = stack.lastOrNull()
     fun push(s: Screen) { stack.add(s) }
@@ -393,6 +429,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Переход на вкладку библиотеки из любого экрана (нижняя навигация доступна везде). */
     fun openTab(index: Int) {
+        if (tab != index) searchQuery = "" // у каждой вкладки свой поиск
         tab = index
         stack.clear()
     }
@@ -557,7 +594,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         scanJob = viewModelScope.launch {
             scanning = true
             try {
+                if (force) withContext(Dispatchers.IO) { CoverStore.clear(getApplication<Application>()) }
                 tracks = library.scan(f)
+                // Чистим дисковый кэш обложек от треков, которых больше нет в библиотеке
+                val uris = tracks.map { it.uri }
+                if (uris.isNotEmpty()) withContext(Dispatchers.IO) { CoverStore.prune(getApplication<Application>(), uris) }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

@@ -13,7 +13,8 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
   - **Tracks**: all tracks in one mixed list
 - **Background playback** with a media notification, lock screen controls, and headset button support.
 - **Player controls:** play/pause, next/previous, seek, shuffle, repeat (off / all / one).
-- **Cover art** read from embedded tags.
+- **Cover art** read from embedded tags and cached on disk in a space-saving way (small WebP thumbnails, one copy per album, size-capped to 24 MB, cleaned of removed tracks), so covers load instantly after restarting the app.
+- **Search** (magnifier left of the gear): finds playlists, albums or tracks depending on the open tab. Partial and whole-word matches, case-insensitive, `ё`=`е`; several words must all match.
 - **Heart and info buttons** next to the track title in the player: the heart toggles the current track in *Liked tracks* (on/off), the round **i** button opens a window with all track details (tags, format, bitrate, sample rate, channels, size, file date, date added to the player, cover size; the folder path is not shown).
 - **Quality badge** above the cover in the player: a rounded pill with the file format and quality (e.g. `MP3 / 192 kbps`, `FLAC / 24 Bit – 96 kHz`), colored by "rarity" like in games: light blue → green → blue (lossy), purple (CD-quality lossless), red (hi-res), gold (24 Bit / 176.4 kHz and above).
 - **Always up to date:** the folder is rescanned every time you open the app (or return to it), so added and deleted files show up automatically. Track metadata is cached, so rescans are fast.
@@ -24,6 +25,7 @@ Built with Kotlin, Jetpack Compose, and Media3 (ExoPlayer). No ads, no accounts,
   - **12-band equalizer** (32 Hz to 16 kHz, ±12 dB) with two modes:
     - *All tracks*: one curve applies to every track; it can be edited both in Settings and in the player
     - *Per track*: every track remembers its own curve permanently (stored on the device); in this mode the curves can be edited only in the player, and the Settings sliders are locked
+    - **10 presets** (Rock, Pop, Hip-hop, Electronic, Jazz, Classical, Metal, Acoustic, Vocal, Bass) in both Settings and the player's EQ screen (in *Per track* mode: in the player, applied to the current track)
     - The mode is chosen in Settings only; the player's equalizer screen has no mode switch and explains which mode is active
   - Bass, treble, subsonic filter and the equalizer are independent and can be used together. Switching equalizer modes never erases saved curves.
 - **Playback speed** from −3x (3 times slower) to 3x (3 times faster) in 0.1 steps (the **Speed** button in the player's sound row, also in Settings). Pitch is preserved; the current speed is shown on the button while it is on.
@@ -93,6 +95,9 @@ app/src/main/java/com/example/localplayer/
 ├── Library.kt             # Folder scanning, metadata cache, playlist storage
 ├── PlaybackService.kt     # Background playback (Media3 MediaSessionService)
 ├── AudioFx.kt             # Sound settings storage + real-time audio processor (mono, normalization, 12-band EQ, bass/treble shelves, subsonic filter)
+├── CoverStore.kt          # Disk cache of cover thumbnails
+├── Search.kt              # Query matching for the search field
+├── EqPresets.kt           # Equalizer presets
 ├── TrackInfo.kt           # Data for the "i" track details window
 └── Models.kt              # Track / Album / Playlist data classes
 ```
