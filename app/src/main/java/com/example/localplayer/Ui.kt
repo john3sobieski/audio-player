@@ -161,6 +161,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -182,6 +183,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -758,36 +760,55 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
  */
 @Composable
 private fun QueuesTab(vm: PlayerViewModel) {
-    val queue = vm.queues.getOrNull(vm.selectedQueue) ?: return
+    Column(Modifier.fillMaxSize()) {
+        QueueSwitcher(vm)
+        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        // Смена очереди — такой же горизонтальный слайд, как между разделами, только вдвое быстрее.
+        // Направление зависит от номера очереди; у каждой очереди своё состояние списка.
+        AnimatedContent(
+            targetState = vm.selectedQueue,
+            transitionSpec = {
+                val dir = if (targetState > initialState) 1 else -1
+                val spec = tween<IntOffset>(QUEUE_SWITCH_MS, easing = FastOutSlowInEasing)
+                (slideInHorizontally(spec) { it * dir }) togetherWith (slideOutHorizontally(spec) { -it * dir })
+            },
+            modifier = Modifier.fillMaxSize().clipToBounds(),
+            label = "queueSwitch",
+        ) { queueId ->
+            // Непрозрачный фон: уходящий и входящий списки не просвечивают друг через друга
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                QueueList(vm, queueId)
+            }
+        }
+    }
+}
+
+private const val QUEUE_SWITCH_MS = 150
+
+@Composable
+private fun QueueList(vm: PlayerViewModel, queueId: Int) {
+    val queue = vm.queues.getOrNull(queueId) ?: return
     val query = vm.activeQuery
     val all = vm.queueTracks(queue)
     val shown = remember(all, query) { if (query.isEmpty()) all else all.filter { it.matches(query) } }
     val searching = query.isNotEmpty()
-
-    Column(Modifier.fillMaxSize()) {
-        QueueSwitcher(vm)
-        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-        // Своё состояние списка у каждой очереди: при переключении прокрутка и перетаскивание начинаются заново
-        key(queue.id) {
-            TrackListScreen(
-                vm = vm,
-                header = "${queue.name} · ${all.size} ${plural(all.size)}",
-                list = shown,
-                emptyText = if (searching) "Ничего не найдено" else "${queue.name} пуста. Добавляйте треки через меню «⋮» в списках или кнопкой очередей в плеере.",
-                menuFor = { t ->
-                    val i = shown.indexOfFirst { it.uri == t.uri }
-                    buildList {
-                        // Во время поиска порядок не меняем (как и при перетаскивании)
-                        if (!searching && i > 0) add("Переместить вверх" to { vm.moveInQueue(queue.id, t, -1) })
-                        if (!searching && i in 0 until shown.lastIndex) add("Переместить вниз" to { vm.moveInQueue(queue.id, t, 1) })
-                        add("Убрать из очереди" to { vm.removeFromQueue(queue.id, t) })
-                    }
-                },
-                sourceKey = "queue:${queue.id}",
-                onReorder = if (searching) null else ({ uris -> vm.reorderQueueTracks(queue.id, uris) }),
-            )
-        }
-    }
+    TrackListScreen(
+        vm = vm,
+        header = "${queue.name} · ${all.size} ${plural(all.size)}",
+        list = shown,
+        emptyText = if (searching) "Ничего не найдено" else "${queue.name} пуста. Добавляйте треки через меню «⋮» в списках или кнопкой очередей в плеере.",
+        menuFor = { t ->
+            val i = shown.indexOfFirst { it.uri == t.uri }
+            buildList {
+                // Во время поиска порядок не меняем (как и при перетаскивании)
+                if (!searching && i > 0) add("Переместить вверх" to { vm.moveInQueue(queue.id, t, -1) })
+                if (!searching && i in 0 until shown.lastIndex) add("Переместить вниз" to { vm.moveInQueue(queue.id, t, 1) })
+                add("Убрать из очереди" to { vm.removeFromQueue(queue.id, t) })
+            }
+        },
+        sourceKey = "queue:${queue.id}",
+        onReorder = if (searching) null else ({ uris -> vm.reorderQueueTracks(queue.id, uris) }),
+    )
 }
 
 /** Компактный переключатель очередей: капсула с четырьмя сегментами и «плашкой» выбранной очереди, которая переезжает на пружине. */
