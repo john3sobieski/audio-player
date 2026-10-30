@@ -106,6 +106,11 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Speaker
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Waves
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -1489,15 +1494,15 @@ private fun QualityBadge(info: AudioInfo?) {
 @Composable
 private fun SoundPanel(vm: PlayerViewModel) {
     var dialog by remember { mutableStateOf<Int?>(null) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        SoundButton("Bass", vm.bassEnabled, Modifier.weight(1f)) { dialog = 0 }
-        SoundButton("Treble", vm.trebleEnabled, Modifier.weight(1f)) { dialog = 1 }
-        SoundButton("Subsonic", vm.subEnabled, Modifier.weight(1f)) { dialog = 2 }
-        SoundButton("EQ", vm.eqMode != EqMode.OFF, Modifier.weight(1f)) { vm.openPlayerEqualizer() }
-        // Включённая скорость показывается прямо на кнопке («1,5x»)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        SoundButton("Bass", Icons.Default.Speaker, vm.bassEnabled, Modifier.weight(1f)) { dialog = 0 }
+        SoundButton("Treble", Icons.Default.GraphicEq, vm.trebleEnabled, Modifier.weight(1f)) { dialog = 1 }
+        SoundButton("Subsonic", Icons.Default.Waves, vm.subEnabled, Modifier.weight(1f)) { dialog = 2 }
+        SoundButton("EQ", Icons.Default.Equalizer, vm.eqMode != EqMode.OFF, Modifier.weight(1f)) { vm.openPlayerEqualizer() }
+        // Включённая скорость показывается прямо на плитке («1,5x»)
         SoundButton(
             if (vm.speedEnabled) speedLabel(vm.speedValue) else "Speed",
-            vm.speedEnabled, Modifier.weight(1f),
+            Icons.Default.Speed, vm.speedEnabled, Modifier.weight(1f),
         ) { dialog = 3 }
     }
     dialog?.let { d ->
@@ -1516,16 +1521,33 @@ private fun SoundPanel(vm: PlayerViewModel) {
     }
 }
 
+/**
+ * Плитка быстрой настройки звука: значок сверху, подпись снизу, скруглённый квадрат вместо вытянутой «таблетки».
+ * Включённый эффект заливается цветом темы, выключенный — спокойная серая плитка без рамки.
+ */
 @Composable
-private fun SoundButton(label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val content: @Composable RowScope.() -> Unit = {
-        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
-    }
-    val pad = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
-    if (active) {
-        FilledTonalButton(onClick = onClick, modifier = modifier, contentPadding = pad, content = content)
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = pad, content = content)
+private fun SoundButton(label: String, icon: ImageVector, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val bg by animateColorAsState(
+        if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        tween(220), label = "soundTileBg",
+    )
+    val fg by animateColorAsState(
+        if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        tween(220), label = "soundTileFg",
+    )
+    val source = remember { MutableInteractionSource() }
+    Column(
+        modifier
+            .pressScale(source, pressedScale = 0.94f)
+            .clip(RoundedCornerShape(18.dp))
+            .background(bg)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(label, color = fg, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
     }
 }
 
