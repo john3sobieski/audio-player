@@ -235,8 +235,9 @@ fun App(vm: PlayerViewModel) {
     // Полноэкранный плеер живёт отдельным слоем поверх всего приложения и не входит в обычную навигацию.
     val playerOpen = Screen.Player in vm.stack
     val playerEqOpen = vm.screen == Screen.PlayerEqualizer
-    val base = vm.stack.lastOrNull { it !is Screen.Player && it !is Screen.PlayerEqualizer }
-    val depth = vm.stack.count { it !is Screen.Player && it !is Screen.PlayerEqualizer }
+    val lyricsOpen = vm.screen == Screen.Lyrics
+    val base = vm.stack.lastOrNull { it !is Screen.Player && it !is Screen.PlayerEqualizer && it !is Screen.Lyrics }
+    val depth = vm.stack.count { it !is Screen.Player && it !is Screen.PlayerEqualizer && it !is Screen.Lyrics }
 
     BackHandler(enabled = vm.screen != null) { vm.pop() }
     BackHandler(enabled = vm.searchOpen && vm.screen == null) { vm.closeSearch() }
@@ -274,7 +275,7 @@ fun App(vm: PlayerViewModel) {
                             null -> LibraryScreen(vm) { folderPicker.launch(null) }
                             Screen.Settings -> SettingsScreen(vm) { folderPicker.launch(null) }
                             Screen.Equalizer -> EqualizerScreen(vm, fromPlayer = false)
-                            Screen.Player, Screen.PlayerEqualizer -> Unit // рисуются отдельными слоями ниже
+                            Screen.Player, Screen.PlayerEqualizer, Screen.Lyrics -> Unit // рисуются отдельными слоями ниже
                             is Screen.AlbumScreen -> AlbumScreen(vm, s.key)
                             is Screen.PlaylistScreen -> PlaylistScreen(vm, s.id)
                         }
@@ -299,6 +300,15 @@ fun App(vm: PlayerViewModel) {
             exit = slideOutHorizontally(tween(250)) { it },
         ) {
             PlayerEqualizerScreen(vm)
+        }
+
+        // Текст песни выезжает снизу поверх плеера; плеер при этом сжат до мини-плеера внизу окна текста.
+        AnimatedVisibility(
+            visible = lyricsOpen,
+            enter = slideInVertically(tween(350)) { it } + fadeIn(tween(250)),
+            exit = slideOutVertically(tween(300)) { it } + fadeOut(tween(200)),
+        ) {
+            LyricsScreen(vm) { MiniPlayer(vm, onClick = { vm.pop() }, showProgress = true) }
         }
     }
 
@@ -334,7 +344,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
         null -> "Моя музыка"
         Screen.Settings -> "Настройки"
         Screen.Equalizer -> "Эквалайзер"
-        Screen.Player, Screen.PlayerEqualizer -> "" // у экранов плеера собственная шапка, сюда они не попадают
+        Screen.Player, Screen.PlayerEqualizer, Screen.Lyrics -> "" // у экранов плеера собственная шапка, сюда они не попадают
         is Screen.AlbumScreen -> vm.albums.find { it.key == screen.key }?.name ?: ""
         is Screen.PlaylistScreen -> vm.playlists.find { it.id == screen.id }?.name ?: ""
     }
@@ -1252,21 +1262,24 @@ private fun NameDialog(title: String, initial: String, onConfirm: (String) -> Un
 // =====================================================================
 
 @Composable
-private fun MiniPlayer(vm: PlayerViewModel) {
+private fun MiniPlayer(vm: PlayerViewModel, onClick: () -> Unit = { vm.openPlayer() }, showProgress: Boolean = false) {
     val t = vm.currentTrack
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().clickable { vm.openPlayer() },
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Cover(t?.uri, 44.dp, decodeSize = PLAYER_COVER_SIZE)
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(t?.title ?: "…", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                Text(t?.artist ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+        Column {
+            if (showProgress) MiniProgress(vm, t?.durationMs ?: 0L)
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Cover(t?.uri, 44.dp, decodeSize = PLAYER_COVER_SIZE)
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(t?.title ?: "…", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                    Text(t?.artist ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                }
+                PlayPauseButton(vm.uiPlaying, { vm.togglePlay() }, buttonSize = 40.dp, iconSize = 20.dp)
+                Spacer(Modifier.width(4.dp))
+                SkipButton(Icons.Default.SkipNext, "Следующий", 1, { vm.next() }, boxSize = 44.dp, iconSize = 26.dp)
             }
-            PlayPauseButton(vm.uiPlaying, { vm.togglePlay() }, buttonSize = 40.dp, iconSize = 20.dp)
-            Spacer(Modifier.width(4.dp))
-            SkipButton(Icons.Default.SkipNext, "Следующий", 1, { vm.next() }, boxSize = 44.dp, iconSize = 26.dp)
         }
     }
 }
@@ -1292,6 +1305,11 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                 Spacer(Modifier.weight(1f))
                 // «О треке» стоит в правом верхнем углу, на одной линии с надписью «Сейчас играет»
                 TrackInfoButton(enabled = t != null) { showInfo = true }
+            }
+            // Кнопка «Текст песни» стоит сразу под кнопкой «i»; строку поднимаем, чтобы между кнопками не было пустоты
+            Row(Modifier.fillMaxWidth().height(40.dp).offset(y = (-8).dp), verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
+                LyricsButton(enabled = t != null) { vm.openLyrics() }
             }
             // Обложка растёт на высоких экранах, чтобы плеер занимал всю высоту без пустой полосы внизу.
             // На низких экранах содержимое прокручивается: панель звука не помещается рядом с обложкой.

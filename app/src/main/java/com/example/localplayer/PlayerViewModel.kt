@@ -36,6 +36,8 @@ sealed interface Screen {
     /** Экран эквалайзера, открытый из плеера: без переключения режимов. */
     data object PlayerEqualizer : Screen
     data object Player : Screen
+    /** Окно текста песни: открывается из плеера, а сам плеер при этом сжимается до мини-плеера внизу. */
+    data object Lyrics : Screen
     data class AlbumScreen(val key: String) : Screen
     data class PlaylistScreen(val id: String) : Screen
 }
@@ -426,6 +428,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (screen != Screen.PlayerEqualizer) push(Screen.PlayerEqualizer)
     }
 
+    /** Текст песни открывается поверх плеера; «Назад» (или нажатие на мини-плеер) возвращает в плеер. */
+    fun openLyrics() {
+        if (screen != Screen.Lyrics) push(Screen.Lyrics)
+    }
+
     // ---------- Навигация ----------
     var tab by mutableIntStateOf(0)
     // ---------- Поиск (на вкладках библиотеки) ----------
@@ -664,6 +671,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 if (force) withContext(Dispatchers.IO) { CoverStore.clear(getApplication<Application>()) }
                 tracks = library.scan(f)
+                Lyrics.clearCache() // .lrc/.txt могли измениться: тексты перечитаются при следующем открытии
                 // Чистим дисковый кэш обложек от треков, которых больше нет в библиотеке
                 val uris = tracks.map { it.uri }
                 if (uris.isNotEmpty()) withContext(Dispatchers.IO) { CoverStore.prune(getApplication<Application>(), uris) }

@@ -26,7 +26,9 @@ class Library(private val ctx: Context) {
     private val queuesFile = File(ctx.filesDir, "queues.json")
     private val cacheFile = File(ctx.filesDir, "tracks_cache.json")
     private val addedFile = File(ctx.filesDir, "added.json")
+    private val lyricsCacheFile = File(ctx.filesDir, "lyrics_cache.json")
 
+    private val lyricsExt = setOf("lrc", "txt")
     private val audioExt = setOf("mp3", "flac", "ogg", "oga", "opus", "m4a", "aac", "wav", "wma", "mka", "amr")
 
     // ---------- Папка ----------
@@ -48,13 +50,20 @@ class Library(private val ctx: Context) {
 
     // ---------- Сканирование ----------
 
-    private class Entry(val uri: Uri, val name: String, val stamp: String, val size: Long, val modified: Long)
+    private class Entry(
+        val uri: Uri, val name: String, val stamp: String, val size: Long, val modified: Long,
+        /** .lrc или .txt с тем же именем в той же папке. */
+        var lyric: Uri? = null,
+    )
+
+    private class LyricInfo(val stamp: String, val tag: Boolean, val file: String?)
 
     suspend fun scan(tree: Uri): List<Track> = withContext(Dispatchers.IO) {
         val files = ArrayList<Entry>()
         walk(tree, DocumentsContract.getTreeDocumentId(tree), files)
 
         val cache = loadCache()
+        val lyricsCache = loadLyricsCache()
         val gate = Semaphore(4)
 
         val pairs: List<Pair<String, Track>> = coroutineScope {
@@ -62,13 +71,20 @@ class Library(private val ctx: Context) {
                 async {
                     val key = "${e.uri}|${e.stamp}"
                     val cached = cache[key]
-                    if (cached != null) key to cached.copy(modified = e.modified)
-                    else key to gate.withPermit { readTrack(e) }
+                    val base = if (cached != null) cached.copy(modified = e.modified)
+                    else gate.withPermit { readTrack(e) }
+                    // Текст песни: .lrc/.txt берётся из списка файлов папки, теги проверяются только у новых и изменённых файлов
+                    val known = lyricsCache[e.uri.toString()]?.takeIf { it.stamp == e.stamp }
+                    val tag = known?.tag ?: gate.withPermit { LyricsTags.hasLyrics(ctx, e.uri) }
+                    key to base.copy(lyricsUri = e.lyric?.toString(), tagLyrics = tag)
                 }
             }.awaitAll()
         }
 
         saveCache(pairs)
+        saveLyricsCache(files.indices.associate { i ->
+            files[i].uri.toString() to LyricInfo(files[i].stamp, pairs[i].second.tagLyrics, pairs[i].second.lyricsUri)
+        })
 
         // Дата «добавлен в плеер»: запоминаем, когда трек впервые увидели при сканировании
         val added = loadAdded()
@@ -106,6 +122,9 @@ class Library(private val ctx: Context) {
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
             DocumentsContract.Document.COLUMN_SIZE,
         )
+        // Аудио и файлы с текстом этой папки: потом сопоставляем их по имени без расширения
+        val here = ArrayList<Entry>()
+        val lyricFiles = HashMap<String, Uri>() // «имя.lrc» / «имя.txt» (в нижнем регистре) -> uri
         try {
             ctx.contentResolver.query(children, projection, null, null, null)?.use { c ->
                 while (c.moveToNext()) {
@@ -115,21 +134,30 @@ class Library(private val ctx: Context) {
                     // Скрытые файлы и папки (начинаются с точки) — не музыка. Главное: Android при удалении файла
                     // не стирает его сразу, а переименовывает в «.trashed-<время>-<имя>» (корзина), также бывают «.pending-…».
                     if (name.startsWith(".")) continue
+                    val ext = name.substringAfterLast('.', "").lowercase()
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         walk(tree, id, out)
-                    } else if (mime.startsWith("audio/") || name.substringAfterLast('.', "").lowercase() in audioExt) {
-                        out += Entry(
+                    } else if (mime.startsWith("audio/") || ext in audioExt) {
+                        here += Entry(
                             DocumentsContract.buildDocumentUriUsingTree(tree, id),
                             name,
                             "${c.getLong(3)}|${c.getLong(4)}",
                             c.getLong(4),
                             c.getLong(3),
                         )
+                    } else if (ext in lyricsExt) {
+                        lyricFiles[name.lowercase()] = DocumentsContract.buildDocumentUriUsingTree(tree, id)
                     }
                 }
             }
         } catch (_: Exception) {
             // нет доступа к подпапке — пропускаем
+        }
+        for (e in here) {
+            val base = e.name.substringBeforeLast('.').lowercase()
+            // .lrc (с таймкодами) важнее .txt
+            e.lyric = lyricFiles["$base.lrc"] ?: lyricFiles["$base.txt"]
+            out += e
         }
     }
 
@@ -215,12 +243,38 @@ class Library(private val ctx: Context) {
 
     fun clearCache() {
         cacheFile.delete()
+        lyricsCacheFile.delete()
+    }
+
+    private fun loadLyricsCache(): Map<String, LyricInfo> = try {
+        val o = JSONObject(lyricsCacheFile.readText())
+        buildMap {
+            o.keys().forEach { k ->
+                val v = o.getJSONObject(k)
+                put(k, LyricInfo(v.getString("s"), v.getBoolean("t"), v.optString("f", "").ifEmpty { null }))
+            }
+        }
+    } catch (_: Exception) {
+        emptyMap()
+    }
+
+    private fun saveLyricsCache(map: Map<String, LyricInfo>) {
+        try {
+            val o = JSONObject()
+            for ((k, v) in map) o.put(k, JSONObject().put("s", v.stamp).put("t", v.tag).put("f", v.file ?: ""))
+            lyricsCacheFile.writeText(o.toString())
+        } catch (_: Exception) {
+        }
     }
 
     /** Треки из прошлого сканирования: показываем их мгновенно, пока идёт актуальный скан. */
     fun cachedTracks(): List<Track> {
         val added = loadAdded()
-        return loadCache().values.map { it.copy(added = added[it.uri] ?: 0L) }.sortedBy { it.title.lowercase() }
+        val lyrics = loadLyricsCache()
+        return loadCache().values.map {
+            val l = lyrics[it.uri]
+            it.copy(added = added[it.uri] ?: 0L, lyricsUri = l?.file, tagLyrics = l?.tag ?: false)
+        }.sortedBy { it.title.lowercase() }
     }
 
     // ---------- Плейлисты ----------

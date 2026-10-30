@@ -15,6 +15,7 @@ No ads, no accounts, no internet access required. Everything stays on your devic
 - **Drag to reorder** playlists, albums and tracks with a long press.
 - **Background playback** with a media notification, lock screen controls and headset button support.
 - **Player:** play/pause, next/previous, seek, shuffle, repeat (off / all / one), cover art, and a quality badge for the file format and bitrate.
+- **Lyrics:** a button under the "i" in the player opens the lyrics. Radiant looks for lyrics in the file tags (ID3 USLT/SYLT, Vorbis `LYRICS`, M4A `©lyr`) and in `.lrc` / `.txt` files with the same name next to the track, and checks again every time you open the app. Synced (`.lrc`) lyrics scroll along with the song, highlight the current line and fade the lines already sung; tap a line to jump to it. Plain lyrics are shown in a compact view.
 - **Playback speed** from 3× slower to 3× faster in 0.1 steps, with pitch preserved.
 - **Sound settings:** mono/stereo, volume normalization, bass and treble boost, subsonic filter, and a 12-band equalizer with 10 presets. The equalizer can apply one curve to all tracks or remember a separate curve for each track.
 - **Themes:** light, true-black dark (great for OLED screens) or system default, with dynamic colors on Android 12+.

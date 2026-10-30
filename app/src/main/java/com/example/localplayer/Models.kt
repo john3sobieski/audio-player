@@ -13,7 +13,14 @@ data class Track(
     val modified: Long = 0L,
     /** Когда трек впервые появился в библиотеке плеера (мс). 0 — неизвестно. */
     val added: Long = 0L,
-)
+    /** Файл с текстом песни рядом с треком (.lrc или .txt с тем же именем). null — такого файла нет. */
+    val lyricsUri: String? = null,
+    /** Текст песни зашит в теги самого файла (ID3 USLT/SYLT, Vorbis LYRICS, M4A ©lyr). */
+    val tagLyrics: Boolean = false,
+) {
+    /** Для этого трека найден хоть какой-то источник текста (проверяется при каждом сканировании папки). */
+    val hasLyrics: Boolean get() = lyricsUri != null || tagLyrics
+}
 
 data class Album(
     val key: String,
