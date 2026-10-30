@@ -51,7 +51,7 @@ You need JDK 17 and either Android Studio or the Android SDK with Gradle 8.9+.
 
 The APK is written to `app/build/outputs/apk/release/app-release.apk`.
 
-> **Signing.** Builds are signed with the keystore in `app/localplayer.jks`, which is public. If you publish your own version, generate your own keystore, keep it private and update `signingConfigs` in `app/build.gradle.kts`.
+> **Signing.** Official releases are signed with a private key that is not part of this repository. A build you make yourself is signed with the standard Android debug key instead, so it installs fine but will not update over an official release (uninstall one before installing the other). If you want your own signed builds in GitHub Actions, add the repository secrets `KEYSTORE_BASE64` (your `.jks` file encoded in base64) and `KEYSTORE_PASSWORD`; the key alias defaults to `radiant`.
 
 ## Built with
 
@@ -59,8 +59,12 @@ Kotlin, Jetpack Compose (Material 3) and AndroidX Media3 (ExoPlayer).
 
 ## Contributing
 
-Issues and pull requests are welcome. For larger changes, please open an issue first to discuss what you would like to change.
+Issues and pull requests are welcome. For larger changes, please open an issue first to discuss what you would like to change. By submitting a pull request you agree that your contribution is provided under the same license as the project.
 
 ## License
 
-No license has been chosen yet. Add a `LICENSE` file (for example MIT) to define how others may use the code.
+Radiant is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+You are free to use, study, modify and share it for any **noncommercial** purpose, including personal use, hobby projects, education and non-profit organizations. **Commercial use is not permitted** without a separate agreement, so you may not sell the app or publish it for profit. If you would like to use Radiant commercially, please get in touch by opening an issue in this repository.
+
+Please keep the `LICENSE` file and its `Required Notice` line with any copy you share.

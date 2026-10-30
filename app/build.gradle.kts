@@ -16,27 +16,28 @@ android {
         versionName = "1.0"
     }
 
-    // Постоянный ключ подписи: новые сборки устанавливаются поверх старых без удаления приложения
-    // (плейлисты при этом сохраняются). Ключ лежит в репозитории: это личный проект, не для магазина приложений.
+    // Ключ подписи release хранится вне репозитория: путь и пароль приходят из переменных окружения
+    // (секреты GitHub Actions). Если их нет (локальная сборка, форк), release подписывается стандартным
+    // отладочным ключом Android: такое приложение устанавливается, но не обновляет официальные сборки.
+    val releaseKeystore = System.getenv("KEYSTORE_PATH")
     signingConfigs {
-        create("shared") {
-            storeFile = file("localplayer.jks")
-            storePassword = "localplayer"
-            keyAlias = "localplayer"
-            keyPassword = "localplayer"
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS") ?: "radiant"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")
+            }
         }
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("shared")
-        }
         release {
             // R8: сжатие и оптимизация кода. Compose в release работает заметно плавнее, чем в debug.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("shared")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
