@@ -42,8 +42,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -299,22 +307,29 @@ fun ActionPill(
         shape = RoundedCornerShape(21.dp),
         color = bg,
     ) {
-        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                icon, null,
-                Modifier.size(20.dp).graphicsLayer {
-                    if (spin) {
-                        rotationZ = anim.value * 360f
-                    } else {
-                        val k = 1.4f - 0.4f * anim.value
-                        scaleX = k
-                        scaleY = k
-                    }
-                },
-                tint = fg,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, color = fg)
+        // Текст и значок плавно перетекают при смене состояния («Играть» ⇄ «Пауза»), ширина таблетки анимируется
+        AnimatedContent(
+            targetState = label to icon,
+            transitionSpec = { fadeIn(tween(200, delayMillis = 60)) togetherWith fadeOut(tween(120)) },
+            label = "pillContent",
+        ) { (text, ic) ->
+            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    ic, null,
+                    Modifier.size(20.dp).graphicsLayer {
+                        if (spin) {
+                            rotationZ = anim.value * 360f
+                        } else {
+                            val k = 1.4f - 0.4f * anim.value
+                            scaleX = k
+                            scaleY = k
+                        }
+                    },
+                    tint = fg,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(text, style = MaterialTheme.typography.labelLarge, color = fg)
+            }
         }
     }
 }
@@ -467,31 +482,87 @@ fun SelectorCaption(text: String) {
 // Меню «три точки»
 // ---------------------------------------------------------------------
 
-/** Кнопка «⋮» и всплывающее меню: сильно скруглённая карточка с тенью, пункты со значками выезжают по очереди. */
+/**
+ * Кнопка «⋮» и всплывающее меню: сильно скруглённая карточка с тенью, пункты со значками выезжают по очереди.
+ * Меню собственное (а не DropdownMenu), чтобы при закрытии оно так же плавно растворялось, как и появлялось:
+ * стандартное меню исчезает почти мгновенно.
+ */
 @Composable
 fun AppMenu(items: List<Pair<String, () -> Unit>>) {
-    var open by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(false) }   // логическое состояние меню
+    var shown by remember { mutableStateOf(false) }  // окно остаётся в композиции, пока идёт анимация закрытия
+    val progress = remember { Animatable(0f) }       // 0 = скрыто, 1 = открыто
     val cs = MaterialTheme.colorScheme
+    LaunchedEffect(open) {
+        if (open) {
+            shown = true
+            progress.animateTo(1f, tween(MENU_ANIM_MS, easing = FastOutSlowInEasing))
+        } else if (shown) {
+            progress.animateTo(0f, tween(MENU_ANIM_MS, easing = FastOutSlowInEasing))
+            shown = false
+        }
+    }
     Box {
         PressBox(onClick = { open = true }, modifier = Modifier.size(40.dp), pressedScale = 0.82f) {
             Icon(Icons.Default.MoreVert, contentDescription = "Меню", tint = cs.onSurfaceVariant)
         }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            shape = RoundedCornerShape(24.dp),
-            containerColor = cs.surfaceContainerHigh,
-            tonalElevation = 0.dp,
-            shadowElevation = 16.dp,
-            offset = DpOffset(0.dp, 4.dp),
-        ) {
-            items.forEachIndexed { i, (label, action) ->
-                AppMenuItem(i, label) {
-                    open = false
-                    action()
+        if (shown) {
+            val density = LocalDensity.current
+            val position = remember(density) { MenuPositionProvider(with(density) { MENU_SHADOW_PAD.roundToPx() }, with(density) { 8.dp.roundToPx() }, with(density) { 4.dp.roundToPx() }) }
+            Popup(
+                popupPositionProvider = position,
+                onDismissRequest = { open = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                // Внешний отступ нужен, чтобы тень не обрезалась границей окна
+                Box(
+                    Modifier
+                        .padding(MENU_SHADOW_PAD)
+                        .graphicsLayer {
+                            val p = progress.value
+                            alpha = p
+                            val k = 0.85f + 0.15f * p
+                            scaleX = k
+                            scaleY = k
+                            transformOrigin = TransformOrigin(1f, 0f)
+                        },
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = cs.surfaceContainerHigh,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 16.dp,
+                    ) {
+                        Column(Modifier.padding(vertical = 8.dp)) {
+                            items.forEachIndexed { i, (label, action) ->
+                                AppMenuItem(i, label) {
+                                    open = false
+                                    action()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+private const val MENU_ANIM_MS = 220
+private val MENU_SHADOW_PAD = 24.dp
+
+/** Меню выравнивается по правому краю кнопки «⋮», открывается вниз (или вверх, если снизу нет места) и не вылезает за экран. */
+private class MenuPositionProvider(private val pad: Int, private val margin: Int, private val gap: Int) : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+        val minX = margin - pad
+        val maxX = (windowSize.width - popupContentSize.width + pad - margin).coerceAtLeast(minX)
+        val x = (anchorBounds.right - popupContentSize.width + pad).coerceIn(minX, maxX)
+        var y = anchorBounds.bottom + gap - pad
+        if (y + popupContentSize.height - pad > windowSize.height - margin) {
+            val above = anchorBounds.top - gap - popupContentSize.height + pad
+            y = if (above + pad >= margin) above else (windowSize.height - margin - popupContentSize.height + pad).coerceAtLeast(margin - pad)
+        }
+        return IntOffset(x, y)
     }
 }
 

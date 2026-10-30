@@ -752,6 +752,7 @@ private fun AlbumScreen(vm: PlayerViewModel, key: String) {
         showCovers = false, // внутри альбома обложка у всех треков одна: показываем её один раз сверху
         coverUri = album.tracks.firstOrNull()?.uri,
         menuFor = { t -> listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }) },
+        sourceKey = "album:$key",
     )
 }
 
@@ -766,6 +767,7 @@ private fun PlaylistScreen(vm: PlayerViewModel, id: String) {
         list = list,
         emptyText = "Плейлист пуст. Добавляйте треки через меню «⋮» на вкладках «Треки» и «Альбомы».",
         menuFor = { t -> listOf("Убрать из плейлиста" to { vm.removeFromPlaylist(pl.id, t) }) },
+        sourceKey = "playlist:$id",
         onReorder = { uris -> vm.reorderPlaylistTracks(pl.id, uris) },
     )
 }
@@ -780,6 +782,8 @@ private fun TrackListScreen(
     /** Если задан, над заголовком показывается большая обложка (экран альбома). */
     coverUri: String? = null,
     menuFor: (Track) -> List<Pair<String, () -> Unit>>,
+    /** Ключ списка (альбом/плейлист): по нему кнопка «Играть» узнаёт, что очередь запущена именно отсюда. */
+    sourceKey: String,
     /** Если задан, треки можно перетаскивать (долгое нажатие); получает новый порядок URI. */
     onReorder: ((List<String>) -> Unit)? = null,
 ) {
@@ -810,10 +814,17 @@ private fun TrackListScreen(
                 Text(header, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ActionPill("Играть", Icons.Default.PlayArrow, primary = true, enabled = list.isNotEmpty(), onClick = { vm.play(list, 0) })
+                    // Пока очередь играет из этого списка, кнопка превращается в «Пауза» и ставит воспроизведение на паузу
+                    val listPlaying = vm.playingSource == sourceKey && vm.currentId != null && vm.uiPlaying
+                    ActionPill(
+                        if (listPlaying) "Пауза" else "Играть",
+                        if (listPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        primary = true, enabled = list.isNotEmpty(),
+                        onClick = { vm.toggleList(list, sourceKey) },
+                    )
                     ActionPill(
                         "Вперемешку", Icons.Default.Shuffle, primary = false, enabled = list.isNotEmpty(),
-                        onClick = { vm.playShuffled(list) }, spin = true,
+                        onClick = { vm.playShuffled(list, sourceKey) }, spin = true,
                     )
                 }
             }
@@ -821,7 +832,7 @@ private fun TrackListScreen(
         if (list.isEmpty()) item { Text(emptyText, Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         itemsIndexed(shown, key = { _, t -> t.uri }) { i, t ->
             TrackRow(
-                t, vm.currentId == t.uri, i + 1, { vm.play(shown, i) }, menuFor(t),
+                t, vm.currentId == t.uri, i + 1, { vm.play(shown, i, source = sourceKey) }, menuFor(t),
                 if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(
                     fadeInSpec = null,
                     fadeOutSpec = null,

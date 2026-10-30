@@ -634,6 +634,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
         controller?.apply { stop(); clearMediaItems() }
         currentId = null
+        playingSource = null
         library.saveFolder(uri)
         folder = uri
         tracks = emptyList()
@@ -678,9 +679,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         )
         .build()
 
-    fun play(list: List<Track>, index: Int, shuffled: Boolean = false) {
+    /**
+     * Откуда сейчас играет очередь: ключ экрана альбома/плейлиста (например, `album:…`, `playlist:…`) или null,
+     * если трек запущен из общего списка. По нему кнопка «Играть» на экране списка понимает, что играет именно он.
+     */
+    var playingSource by mutableStateOf<String?>(null)
+        private set
+
+    fun play(list: List<Track>, index: Int, shuffled: Boolean = false, source: String? = null) {
         val c = controller ?: return
         if (list.isEmpty()) return
+        playingSource = source
         c.shuffleModeEnabled = shuffled
         c.setMediaItems(list.map { it.toItem() }, index.coerceIn(0, list.lastIndex), 0L)
         c.prepare()
@@ -688,9 +697,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         markUiPlaying(true)
     }
 
-    fun playShuffled(list: List<Track>) {
+    fun playShuffled(list: List<Track>, source: String? = null) {
         if (list.isEmpty()) return
-        play(list, list.indices.random(), shuffled = true)
+        play(list, list.indices.random(), shuffled = true, source = source)
+    }
+
+    /**
+     * Кнопка «Играть / Пауза» на экране альбома или плейлиста: если очередь уже загружена из этого списка,
+     * ставит на паузу или продолжает; иначе запускает список с начала.
+     */
+    fun toggleList(list: List<Track>, source: String) {
+        val c = controller ?: return
+        if (playingSource == source && c.mediaItemCount > 0 && c.playbackState != Player.STATE_ENDED) togglePlay()
+        else play(list, 0, source = source)
     }
 
     fun togglePlay() {
