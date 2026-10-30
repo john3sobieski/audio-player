@@ -19,6 +19,7 @@ No ads, no accounts, no internet access required. Everything stays on your devic
 - **Playback speed** from 3× slower to 3× faster in 0.1 steps, with pitch preserved.
 - **Sound settings:** mono/stereo, volume normalization, bass and treble boost, subsonic filter, and a 12-band equalizer with 10 presets. The equalizer can apply one curve to all tracks or remember a separate curve for each track.
 - **Themes:** light, true-black dark (great for OLED screens) or system default, with dynamic colors on Android 12+.
+- **Power saving** (Settings): *Off*, *Medium* (almost no animations, rarer progress updates) or *Intensive* (also forced black theme, volume capped at 40%, mono only, EQ/bass/treble/subsonic/normalization bypassed, wired or phone-speaker output only with no Bluetooth, manual folder scan, smaller cover cache).
 - **Track details:** tags, format, bitrate, sample rate, channels, file size and more.
 - **Formats:** MP3, FLAC, OGG/Opus, M4A/AAC, WAV and anything else Android can decode.
 

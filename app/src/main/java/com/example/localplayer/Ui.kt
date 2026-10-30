@@ -28,6 +28,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -95,6 +97,10 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.BatteryStd
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -216,17 +222,24 @@ private data class NavState(val screen: Screen?, val depth: Int)
  * один слой с прозрачностью вместо двух.
  */
 private fun screenTransition(from: NavState, to: NavState): ContentTransform =
-    if (to.depth > from.depth) {
+    if (PowerSave.reduceMotion) {
+        // Энергосбережение: вместо слайда короткое проявление нового экрана, старый исчезает сразу
+        ContentTransform(
+            fadeIn(tween(QUICK_FADE_MS)),
+            fadeOut(snap()),
+            targetContentZIndex = if (to.depth > from.depth) 0f else -1f,
+        )
+    } else if (to.depth > from.depth) {
         // Вперёд: новый экран выезжает справа поверх старого
         ContentTransform(
-            slideInHorizontally(tween(300)) { it / 4 } + fadeIn(tween(250)),
-            slideOutHorizontally(tween(300)) { -it / 4 },
+            slideInHorizontally(mtween(300)) { it / 4 } + fadeIn(mtween(250)),
+            slideOutHorizontally(mtween(300)) { -it / 4 },
         )
     } else {
         // Назад: уходящий экран уезжает вправо, открывая предыдущий под ним
         ContentTransform(
-            slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(250)),
-            slideOutHorizontally(tween(300)) { it },
+            slideInHorizontally(mtween(300)) { -it / 4 } + fadeIn(mtween(250)),
+            slideOutHorizontally(mtween(300)) { it },
             targetContentZIndex = -1f,
         )
     }
@@ -259,8 +272,8 @@ fun App(vm: PlayerViewModel) {
                 Column {
                     AnimatedVisibility(
                         visible = vm.currentId != null,
-                        enter = slideInVertically(tween(250)) { it },
-                        exit = slideOutVertically(tween(200)) { it },
+                        enter = slideInVertically(mtween(250)) { it },
+                        exit = slideOutVertically(mtween(200)) { it },
                     ) {
                         MiniPlayer(vm)
                     }
@@ -292,8 +305,8 @@ fun App(vm: PlayerViewModel) {
         // Плеер выезжает снизу поверх всего. Основной экран под ним не меняется и не перерисовывается.
         AnimatedVisibility(
             visible = playerOpen,
-            enter = slideInVertically(tween(350)) { it },
-            exit = slideOutVertically(tween(300)) { it },
+            enter = if (PowerSave.reduceMotion) fadeIn(tween(QUICK_FADE_MS)) else slideInVertically(mtween(350)) { it },
+            exit = if (PowerSave.reduceMotion) ExitTransition.None else slideOutVertically(mtween(300)) { it },
         ) {
             PlayerScreen(vm)
         }
@@ -301,8 +314,8 @@ fun App(vm: PlayerViewModel) {
         // Эквалайзер из плеера выезжает справа поверх плеера. Кнопка «Назад» возвращает в плеер.
         AnimatedVisibility(
             visible = playerEqOpen,
-            enter = slideInHorizontally(tween(300)) { it },
-            exit = slideOutHorizontally(tween(250)) { it },
+            enter = if (PowerSave.reduceMotion) fadeIn(tween(QUICK_FADE_MS)) else slideInHorizontally(mtween(300)) { it },
+            exit = if (PowerSave.reduceMotion) ExitTransition.None else slideOutHorizontally(mtween(250)) { it },
         ) {
             PlayerEqualizerScreen(vm)
         }
@@ -310,8 +323,8 @@ fun App(vm: PlayerViewModel) {
         // Текст песни выезжает снизу поверх плеера; плеер при этом сжат до мини-плеера внизу окна текста.
         AnimatedVisibility(
             visible = lyricsOpen,
-            enter = slideInVertically(tween(350)) { it } + fadeIn(tween(250)),
-            exit = slideOutVertically(tween(300)) { it } + fadeOut(tween(200)),
+            enter = if (PowerSave.reduceMotion) fadeIn(tween(QUICK_FADE_MS)) else slideInVertically(mtween(350)) { it } + fadeIn(mtween(250)),
+            exit = if (PowerSave.reduceMotion) ExitTransition.None else slideOutVertically(mtween(300)) { it } + fadeOut(mtween(200)),
         ) {
             LyricsScreen(vm) { MiniPlayer(vm, onClick = { vm.pop() }, showProgress = true) }
         }
@@ -355,7 +368,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
     }
     val searching = vm.searchOpen && screen == null
     // 0 -> 1: заголовок уезжает влево и гаснет, на его месте раскрывается поле поиска
-    val shift by animateFloatAsState(if (searching) 1f else 0f, tween(320), label = "titleShift")
+    val shift by animateFloatAsState(if (searching) 1f else 0f, mtween(320), label = "titleShift")
     val barColors = MaterialTheme.colorScheme
     // У самого TopAppBar цвет фона внутри анимируется собственной пружиной (поверх нашей анимации темы),
     // из-за чего плашка запаздывала. Поэтому фон рисуем сами, а контейнер TopAppBar делаем прозрачным.
@@ -376,15 +389,15 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
                         translationX = -(size.width + 64.dp.toPx()) * shift
                         alpha = 1f - shift
                     },
-                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                    transitionSpec = { fadeIn(mtween(200)) togetherWith fadeOut(mtween(150)) },
                     label = "title",
                 ) { text ->
                     Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 AnimatedVisibility(
                     visible = searching,
-                    enter = fadeIn(tween(250, delayMillis = 120)) + expandHorizontally(tween(320), expandFrom = Alignment.End),
-                    exit = fadeOut(tween(150)) + shrinkHorizontally(tween(250), shrinkTowards = Alignment.End),
+                    enter = fadeIn(mtween(250, delayMillis = 120)) + expandHorizontally(mtween(320), expandFrom = Alignment.End),
+                    exit = fadeOut(mtween(150)) + shrinkHorizontally(mtween(250), shrinkTowards = Alignment.End),
                 ) {
                     SearchField(vm)
                 }
@@ -398,6 +411,12 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
             }
         },
         actions = {
+            // Интенсивный режим: автоматического сканирования нет, список обновляется этой кнопкой
+            if (PowerSave.intensive && screen == null && vm.folder != null) {
+                IconButton(onClick = { vm.rescan() }, enabled = !vm.scanning) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Сканировать папку")
+                }
+            }
             // Лупа стоит слева от шестерёнки; при открытом поиске превращается в крестик
             AnimatedVisibility(visible = screen == null && vm.folder != null) {
                 IconButton(onClick = { if (searching) vm.closeSearch() else vm.openSearch() }) {
@@ -472,7 +491,7 @@ private fun LibraryNavBar(vm: PlayerViewModel) {
             // Одна общая «плашка» выбранного раздела: при смене раздела она не исчезает, а переезжает на пружине
             val pillX by animateDpAsState(
                 itemW * vm.tab + (itemW - 64.dp) / 2,
-                spring(dampingRatio = 0.72f, stiffness = 420f),
+                mspring(dampingRatio = 0.72f, stiffness = 420f),
                 label = "navPill",
             )
             Box(
@@ -484,9 +503,9 @@ private fun LibraryNavBar(vm: PlayerViewModel) {
             Row(Modifier.fillMaxSize()) {
                 items.forEachIndexed { i, (label, icon) ->
                     val selected = vm.tab == i
-                    val iconColor by animateColorAsState(if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant, tween(220), label = "navIcon")
-                    val textColor by animateColorAsState(if (selected) cs.onSurface else cs.onSurfaceVariant, tween(220), label = "navText")
-                    val iconScale by animateFloatAsState(if (selected) 1.12f else 1f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "navScale")
+                    val iconColor by animateColorAsState(if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant, mtween(220), label = "navIcon")
+                    val textColor by animateColorAsState(if (selected) cs.onSurface else cs.onSurfaceVariant, mtween(220), label = "navText")
+                    val iconScale by animateFloatAsState(if (selected) 1.12f else 1f, mspring(dampingRatio = 0.5f, stiffness = 500f), label = "navScale")
                     val src = remember { MutableInteractionSource() }
                     Column(
                         Modifier
@@ -521,7 +540,17 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
     }
     Column(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible = vm.scanning) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (PowerSave.reduceMotion) {
+                // Бесконечная анимация индикатора будит экран на каждом кадре: вместо неё статичная подпись
+                Text(
+                    "Сканирую папку…",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            } else {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
         }
         // Вкладки — страницы горизонтального пейджера: переход прерывается и перенаправляется на лету,
         // поэтому при быстром переключении страницы не накладываются друг на друга. Работает и свайп.
@@ -536,7 +565,8 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             // Если пейджер уже направляется на эту вкладку (например, при свайпе), анимацию не запускаем
             if (pagerState.targetPage != vm.tab) {
                 pending = vm.tab
-                pagerState.animateScrollToPage(vm.tab, animationSpec = tween(300, easing = FastOutSlowInEasing))
+                if (PowerSave.reduceMotion) pagerState.scrollToPage(vm.tab)
+                else pagerState.animateScrollToPage(vm.tab, animationSpec = mtween(300, easing = FastOutSlowInEasing))
             }
         }
         LaunchedEffect(pagerState) {
@@ -555,7 +585,8 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             state = pagerState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             // Соседние страницы собираются заранее: переход не ждёт отрисовки тяжёлого списка треков
-            beyondViewportPageCount = 2,
+            // В интенсивном режиме страницы заранее не собираются: меньше памяти и работы процессора
+            beyondViewportPageCount = PowerSave.pagerBeyondCount(),
             key = { it },
         ) { page ->
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -784,7 +815,7 @@ private fun QueuesTab(vm: PlayerViewModel) {
             targetState = vm.selectedQueue,
             transitionSpec = {
                 val dir = if (targetState > initialState) 1 else -1
-                val spec = tween<IntOffset>(QUEUE_SWITCH_MS, easing = FastOutSlowInEasing)
+                val spec = mtween<IntOffset>(QUEUE_SWITCH_MS, easing = FastOutSlowInEasing)
                 (slideInHorizontally(spec) { it * dir }) togetherWith (slideOutHorizontally(spec) { -it * dir })
             },
             modifier = Modifier.fillMaxSize().clipToBounds(),
@@ -837,7 +868,7 @@ private fun QueueSwitcher(vm: PlayerViewModel) {
             val segW = maxWidth / QUEUE_COUNT
             val pillX by animateDpAsState(
                 segW * vm.selectedQueue,
-                spring(dampingRatio = 0.75f, stiffness = 480f),
+                mspring(dampingRatio = 0.75f, stiffness = 480f),
                 label = "queuePill",
             )
             Box(
@@ -851,7 +882,7 @@ private fun QueueSwitcher(vm: PlayerViewModel) {
                 vm.queues.forEach { q ->
                     val selected = vm.selectedQueue == q.id
                     val textColor by animateColorAsState(
-                        if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant, tween(220), label = "queueText",
+                        if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant, mtween(220), label = "queueText",
                     )
                     val src = remember { MutableInteractionSource() }
                     Box(
@@ -991,7 +1022,7 @@ private fun TrackListScreen(
                 if (onReorder != null) reorderableItem(reorder, t.uri) else Modifier.animateItem(
                     fadeInSpec = null,
                     fadeOutSpec = null,
-                    placementSpec = if (FastScroll.active) null else androidx.compose.animation.core.spring(
+                    placementSpec = if (FastScroll.active || PowerSave.reduceMotion) null else mspring(
                         stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
                         visibilityThreshold = androidx.compose.ui.unit.IntOffset.Companion.VisibilityThreshold,
                     ),
@@ -1019,7 +1050,7 @@ private fun TrackRow(
 ) {
     val color by animateColorAsState(
         if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        tween(300), label = "trackColor",
+        mtween(300), label = "trackColor",
     )
     ListItem(
         modifier = modifier.pressableRow(onClick, highlighted = current),
@@ -1081,6 +1112,11 @@ private val coverCache = object : LruCache<String, ImageBitmap>(24 * 1024 * 1024
     override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
 }
 
+/** Интенсивный режим: кэш обложек в памяти втрое меньше (меньше живых картинок в куче, реже работа сборщика мусора). */
+internal fun applyCoverCachePolicy() {
+    coverCache.resize(if (PowerSave.intensiveNow) 8 * 1024 * 1024 else 24 * 1024 * 1024)
+}
+
 @Composable
 private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
     val ctx = LocalContext.current
@@ -1106,7 +1142,7 @@ private fun Cover(uri: String?, size: Dp, decodeSize: Dp = size) {
         Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        Crossfade(targetState = bmp, animationSpec = tween(if (fastScrolling) 0 else 200), label = "cover") { b ->
+        Crossfade(targetState = bmp, animationSpec = mtween(if (fastScrolling) 0 else 200), label = "cover") { b ->
             if (b != null) Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -1338,7 +1374,7 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                         AnimatedContent(
                             targetState = t,
                             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                            transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+                            transitionSpec = { fadeIn(mtween(250)) togetherWith fadeOut(mtween(150)) },
                             label = "nowPlayingTitle",
                         ) { tr ->
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1466,7 +1502,7 @@ private fun QualityBadge(info: AudioInfo?) {
     Box(Modifier.height(28.dp), contentAlignment = Alignment.Center) {
         AnimatedContent(
             targetState = info?.takeIf { it.format.isNotEmpty() },
-            transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+            transitionSpec = { fadeIn(mtween(250)) togetherWith fadeOut(mtween(150)) },
             label = "qualityBadge",
         ) { q ->
             if (q != null) {
@@ -1529,11 +1565,11 @@ private fun SoundPanel(vm: PlayerViewModel) {
 private fun SoundButton(label: String, icon: ImageVector, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val bg by animateColorAsState(
         if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        tween(220), label = "soundTileBg",
+        mtween(220), label = "soundTileBg",
     )
     val fg by animateColorAsState(
         if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-        tween(220), label = "soundTileFg",
+        mtween(220), label = "soundTileFg",
     )
     val source = remember { MutableInteractionSource() }
     Column(
@@ -1701,7 +1737,9 @@ private fun SeekBar(vm: PlayerViewModel, durationMs: Long) {
         posState.longValue = vm.controller?.currentPosition ?: 0L
         if (vm.isPlaying) {
             while (true) {
-                withFrameNanos { }
+                // Обычно позиция читается на каждом кадре; в режимах энергосбережения — редко (раз в 0,25 или 1 с)
+                val tick = PowerSave.progressTickMs()
+                if (tick == 0L) withFrameNanos { } else delay(tick)
                 if (dragFraction == null) {
                     posState.longValue = vm.controller?.currentPosition ?: posState.longValue
                 }
@@ -1782,8 +1820,8 @@ private fun PlayerControls(vm: PlayerViewModel) {
             AnimatedContent(
                 targetState = vm.repeat == Player.REPEAT_MODE_ONE,
                 transitionSpec = {
-                    (scaleIn(spring(dampingRatio = 0.6f, stiffness = 500f)) + fadeIn(tween(120))) togetherWith
-                        (scaleOut(tween(100)) + fadeOut(tween(100)))
+                    (scaleIn(mspring(dampingRatio = 0.6f, stiffness = 500f)) + fadeIn(mtween(120))) togetherWith
+                        (scaleOut(mtween(100)) + fadeOut(mtween(100)))
                 },
                 label = "repeatIcon",
             ) { one ->
@@ -1822,13 +1860,27 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             Button(onClick = pickFolder, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Выбрать папку")
             }
+            if (PowerSave.intensive) {
+                // Интенсивный режим: список обновляется только по этой кнопке
+                FilledTonalButton(
+                    onClick = { vm.rescan() },
+                    enabled = vm.folder != null && !vm.scanning,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Сканировать папку")
+                }
+            }
             OutlinedButton(
                 onClick = { vm.rescan(force = true) },
                 enabled = vm.folder != null && !vm.scanning,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Пересканировать папку") }
             Text(
-                "Плеер читает только выбранную папку и её подпапки и обновляет список при каждом входе в приложение.",
+                if (PowerSave.intensive) {
+                    "Интенсивный режим: автоматического сканирования нет. Новые и удалённые файлы подхватываются только по кнопке «Сканировать папку»."
+                } else {
+                    "Плеер читает только выбранную папку и её подпапки и обновляет список при каждом входе в приложение."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1843,14 +1895,37 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
         )
         val themeModes = ThemeMode.entries
+        val themeLocked = PowerSave.intensive
         SlidingSelector(
             labels = themeModes.map { it.label },
             icons = listOf(Icons.Default.LightMode, Icons.Default.DarkMode, Icons.Default.SettingsBrightness),
-            selected = themeModes.indexOf(vm.themeMode),
+            selected = themeModes.indexOf(if (themeLocked) ThemeMode.DARK else vm.themeMode),
             onSelect = { vm.changeTheme(themeModes[it]) },
             modifier = Modifier.padding(horizontal = 16.dp),
+            enabled = !themeLocked,
         )
-        SelectorCaption(vm.themeMode.description)
+        SelectorCaption(
+            if (themeLocked) "Интенсивный режим: всегда чёрная тема. Выбранная раньше вернётся при выходе из режима"
+            else vm.themeMode.description,
+        )
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider()
+
+        // ----- Энергоэффективность -----
+        Text(
+            "Энергоэффективность",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+        )
+        val powerModes = PowerMode.entries
+        SlidingSelector(
+            labels = powerModes.map { it.label },
+            icons = listOf(Icons.Default.BatteryFull, Icons.Default.BatteryStd, Icons.Default.BatteryAlert),
+            selected = powerModes.indexOf(vm.powerMode),
+            onSelect = { vm.changePowerMode(powerModes[it]) },
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        SelectorCaption(vm.powerMode.description)
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
 
@@ -1860,11 +1935,31 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
         )
+        if (PowerSave.intensive) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    "Интенсивный режим: громкость плеера не выше 40%, звук только моно, а эквалайзер, басы, требл, " +
+                        "subsonic и нормализация отключены. Их настройки сохранены и вернутся при выходе из режима.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
+        }
         SwitchRow(
             title = "Моно",
-            subtitle = if (vm.monoEnabled) "Левый и правый каналы объединены" else "Стерео: левый и правый каналы раздельно",
-            checked = vm.monoEnabled,
+            subtitle = when {
+                PowerSave.intensive -> "Включено интенсивным режимом энергосбережения"
+                vm.monoEnabled -> "Левый и правый каналы объединены"
+                else -> "Стерео: левый и правый каналы раздельно"
+            },
+            checked = vm.monoEnabled || PowerSave.intensive,
             onChange = { vm.changeMono(it) },
+            enabled = !PowerSave.intensive,
         )
         SwitchRow(
             title = "Нормализация громкости",
@@ -1953,7 +2048,7 @@ private fun FactoryResetDialog(onConfirm: (clearCache: Boolean) -> Unit, onDismi
             Column {
                 Text(
                     "Будут сброшены все настройки звука (моно, нормализация, басы, требл, subsonic, скорость), " +
-                        "все эквалайзеры (общий и отдельных треков) и сортировки. " +
+                        "все эквалайзеры (общий и отдельных треков), сортировки и режим энергоэффективности. " +
                         "Плейлисты и выбранная папка сохранятся.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -1995,12 +2090,12 @@ private fun formatBytes(b: Long): String = when {
 }
 
 @Composable
-private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
     ListItem(
-        modifier = Modifier.clickable { onChange(!checked) },
+        modifier = Modifier.clickable(enabled = enabled) { onChange(!checked) },
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onChange) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onChange, enabled = enabled) },
     )
 }
 

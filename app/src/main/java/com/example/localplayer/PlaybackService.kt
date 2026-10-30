@@ -3,6 +3,9 @@ package com.example.localplayer
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -26,10 +29,25 @@ class PlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
     private var fader: FadingPlayer? = null
+    private var exo: ExoPlayer? = null
+
+    // ---- Энергосбережение: громкость и маршрут звука ----
+    private var audioManager: AudioManager? = null
+    private var routeCallbackRegistered = false
+    private val routeCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = applyRoute()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = applyRoute()
+    }
+    private val powerListener: () -> Unit = {
+        fader?.refreshVolume()
+        updateRouting()
+    }
 
     override fun onCreate() {
         super.onCreate()
+        PowerSave.load(this)
         AudioFx.load(this)
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
         // Свой аудиовыход: эффекты (эквалайзер, моно, нормализация) и качественное изменение скорости
         val renderers = object : DefaultRenderersFactory(this) {
@@ -57,6 +75,8 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
+        exo = player
+
         // Сохранённая скорость воспроизведения (меняется кнопкой Speed в плеере)
         player.playbackParameters = PlaybackParameters(AudioFx.effectiveSpeed())
 
@@ -75,6 +95,39 @@ class PlaybackService : MediaSessionService() {
         // Все команды (кнопки в приложении, уведомление, гарнитура) идут через обёртку с плавной громкостью
         fader = FadingPlayer(player)
         session = MediaSession.Builder(this, fader!!).setSessionActivity(openApp).build()
+
+        PowerSave.addListener(powerListener)
+        updateRouting()
+    }
+
+    /**
+     * Интенсивный режим: звук идёт только на проводные наушники / USB-аудио, а если их нет, то на динамик телефона.
+     * Bluetooth не используется вовсе (передача по радио заметно расходует заряд и телефона, и наушников).
+     * Колбэк подключений регистрируется только в интенсивном режиме, чтобы в остальное время не будить процессор.
+     */
+    private fun updateRouting() {
+        val am = audioManager ?: return
+        if (PowerSave.intensiveNow) {
+            if (!routeCallbackRegistered) {
+                am.registerAudioDeviceCallback(routeCallback, Handler(Looper.getMainLooper()))
+                routeCallbackRegistered = true
+            }
+            applyRoute()
+        } else {
+            if (routeCallbackRegistered) {
+                am.unregisterAudioDeviceCallback(routeCallback)
+                routeCallbackRegistered = false
+            }
+            exo?.setPreferredAudioDevice(null)
+        }
+    }
+
+    private fun applyRoute() {
+        val am = audioManager ?: return
+        val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        val wired = outs.firstOrNull { it.type in WIRED_TYPES }
+        val speaker = outs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+        exo?.setPreferredAudioDevice(wired ?: speaker)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -85,6 +138,12 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        PowerSave.removeListener(powerListener)
+        if (routeCallbackRegistered) {
+            audioManager?.unregisterAudioDeviceCallback(routeCallback)
+            routeCallbackRegistered = false
+        }
+        exo = null
         fader?.cancelFades()
         fader = null
         session?.run {
@@ -93,6 +152,17 @@ class PlaybackService : MediaSessionService() {
         }
         session = null
         super.onDestroy()
+    }
+
+    private companion object {
+        val WIRED_TYPES = setOf(
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_LINE_ANALOG,
+            AudioDeviceInfo.TYPE_LINE_DIGITAL,
+        )
     }
 }
 
@@ -104,6 +174,8 @@ class PlaybackService : MediaSessionService() {
 private class FadingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
 
     private val handler = Handler(Looper.getMainLooper())
+    /** Уровень плавного старта/остановки (0...1). Реальная громкость плеера = уровень × ограничение энергосбережения. */
+    private var level = 1f
     private var ramp: Runnable? = null
     private var fadeInPending = false
     private var pausePending = false
@@ -116,7 +188,18 @@ private class FadingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
         }
     }
 
+    private fun setLevel(v: Float) {
+        level = v
+        exo.volume = v * PowerSave.volumeCap
+    }
+
+    /** Применяет текущее ограничение громкости (при смене режима энергосбережения). */
+    fun refreshVolume() {
+        exo.volume = level * PowerSave.volumeCap
+    }
+
     init {
+        refreshVolume()
         exo.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying && fadeInPending) {
@@ -138,11 +221,11 @@ private class FadingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
         }
         cancelFades()
         if (exo.playWhenReady) {
-            exo.volume = 1f
+            setLevel(1f)
             super.play()
         } else {
             // Запуск с паузы или с остановки: начинаем с тишины, нарастание стартует, когда звук реально пошёл
-            exo.volume = 0f
+            setLevel(0f)
             fadeInPending = true
             handler.postDelayed(fadeInFallback, FADE_IN_FALLBACK_MS)
             super.play()
@@ -161,7 +244,7 @@ private class FadingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
         rampTo(0f, FADE_OUT_MS) {
             pausePending = false
             exo.pause()
-            exo.volume = 1f
+            setLevel(1f)
         }
     }
 
@@ -181,19 +264,20 @@ private class FadingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
         handler.removeCallbacks(fadeInFallback)
         fadeInPending = false
         pausePending = false
-        if (resetVolume) exo.volume = 1f
+        if (resetVolume) setLevel(1f)
     }
 
     private fun rampTo(target: Float, durationMs: Long, onEnd: (() -> Unit)? = null) {
         ramp?.let { handler.removeCallbacks(it) }
-        val from = exo.volume
+        val from = level
         val start = SystemClock.uptimeMillis()
         val step = object : Runnable {
             override fun run() {
                 val f = ((SystemClock.uptimeMillis() - start).toFloat() / durationMs).coerceIn(0f, 1f)
-                exo.volume = from + (target - from) * f
+                setLevel(from + (target - from) * f)
                 if (f < 1f) {
-                    handler.postDelayed(this, STEP_MS)
+                    // В режимах энергосбережения громкость меняется реже: меньше пробуждений процессора
+                    handler.postDelayed(this, if (PowerSave.reduceNow) STEP_ECO_MS else STEP_MS)
                 } else {
                     ramp = null
                     onEnd?.invoke()
@@ -209,5 +293,6 @@ private class FadingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
         const val FADE_OUT_MS = 250L
         const val FADE_IN_FALLBACK_MS = 2000L
         const val STEP_MS = 16L
+        const val STEP_ECO_MS = 40L
     }
 }

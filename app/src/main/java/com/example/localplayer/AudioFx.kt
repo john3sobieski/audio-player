@@ -411,8 +411,10 @@ class AudioFxProcessor : BaseAudioProcessor() {
 
         if (appliedVersion != AudioFx.version) rebuildFilters()
 
-        val doMono = AudioFx.mono && channels == 2
-        val doNorm = AudioFx.normalize
+        // Интенсивное энергосбережение: всегда моно, без нормализации (фильтры отключает rebuildFilters)
+        val eco = PowerSave.intensiveNow
+        val doMono = (AudioFx.mono || eco) && channels == 2
+        val doNorm = AudioFx.normalize && !eco
         val hasFilters = active.isNotEmpty()
         val doLimit = doNorm || hasFilters
 
@@ -490,6 +492,13 @@ class AudioFxProcessor : BaseAudioProcessor() {
 
     private fun rebuildFilters() {
         appliedVersion = AudioFx.version
+        if (PowerSave.intensiveNow) {
+            // Эквалайзер, басы, требл и subsonic не считаем вовсе: это самая дорогая для процессора часть обработки
+            active = IntArray(0)
+            z.fill(0.0)
+            preamp = 1.0
+            return
+        }
         val gains = AudioFx.gains
         val bass = AudioFx.bassDb.toDouble()
         val treble = AudioFx.trebleDb.toDouble()

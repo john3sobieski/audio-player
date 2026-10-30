@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PowerSave.load(this)
         enableEdgeToEdge()
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -74,7 +75,8 @@ private fun ColorScheme.asOled(): ColorScheme = copy(
 
 @Composable
 fun AppTheme(mode: ThemeMode, content: @Composable () -> Unit) {
-    val dark = when (mode) {
+    // Интенсивное энергосбережение: тема всегда чёрная, выбранная пользователем при этом не теряется
+    val dark = if (PowerSave.intensive) true else when (mode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
         ThemeMode.SYSTEM -> isSystemInDarkTheme()

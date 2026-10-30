@@ -88,7 +88,7 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
     val listFraction by remember { derivedStateOf { scrollFraction(state, headerCount) } }
     val animatedFraction by animateFloatAsState(
         listFraction,
-        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+        mspring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
         label = "thumbPos",
     )
 
@@ -103,10 +103,10 @@ private fun FastScrollbar(state: LazyListState, headerCount: Int, modifier: Modi
     }
     val alpha by animateFloatAsState(
         if (shown && scrollable) 1f else 0f,
-        tween(if (shown) 120 else 350),
+        mtween(if (shown) 120 else 350),
         label = "thumbAlpha",
     )
-    val barWidth by animateDpAsState(if (dragging) 8.dp else 4.dp, tween(120), label = "thumbWidth")
+    val barWidth by animateDpAsState(if (dragging) 8.dp else 4.dp, mtween(120), label = "thumbWidth")
 
     LaunchedEffect(dragging) { FastScroll.active = dragging }
     DisposableEffect(Unit) { onDispose { FastScroll.active = false } }

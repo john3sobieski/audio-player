@@ -31,6 +31,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -71,7 +72,7 @@ import kotlin.math.sin
 // =====================================================================
 
 /** Пружина нажатия: быстрая, с небольшим отскоком. */
-private fun <T> pressSpring() = spring<T>(dampingRatio = 0.5f, stiffness = 650f)
+private fun <T> pressSpring() = mspring<T>(dampingRatio = 0.5f, stiffness = 650f)
 
 /** Масштаб при нажатии. Применять до clickable/clip, чтобы масштабировался весь элемент. */
 @Composable
@@ -123,10 +124,10 @@ fun Modifier.pressableRow(onClick: () -> Unit, highlighted: Boolean = false): Mo
             highlighted -> primary.copy(alpha = 0.09f)
             else -> Color.Transparent
         },
-        tween(if (pressed) 80 else 380),
+        mtween(if (pressed) 80 else 380),
         label = "rowBg",
     )
-    val s by animateFloatAsState(if (pressed) 0.972f else 1f, spring(dampingRatio = 0.55f, stiffness = 500f), label = "rowScale")
+    val s by animateFloatAsState(if (pressed) 0.972f else 1f, mspring(dampingRatio = 0.55f, stiffness = 500f), label = "rowScale")
     val shape = RoundedCornerShape(16.dp)
     return this
         .graphicsLayer {
@@ -146,7 +147,7 @@ fun Modifier.pressableRow(onClick: () -> Unit, highlighted: Boolean = false): Mo
 /** Значок, который перетекает из треугольника «play» в две полоски «pause» (и обратно) с пружинным отскоком. */
 @Composable
 fun PlayPauseIcon(playing: Boolean, tint: Color, iconSize: Dp, modifier: Modifier = Modifier) {
-    val t by animateFloatAsState(if (playing) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 380f), label = "playPause")
+    val t by animateFloatAsState(if (playing) 1f else 0f, mspring(dampingRatio = 0.7f, stiffness = 380f), label = "playPause")
     Canvas(modifier.size(iconSize)) {
         val k = this.size.minDimension / 24f
         // Треугольник разрезан на две части, каждая — четырёхугольник, как и полоска паузы
@@ -177,7 +178,7 @@ fun PlayPauseIcon(playing: Boolean, tint: Color, iconSize: Dp, modifier: Modifie
 fun PlayPauseButton(playing: Boolean, onClick: () -> Unit, buttonSize: Dp, iconSize: Dp, modifier: Modifier = Modifier) {
     val corner by animateDpAsState(
         if (playing) buttonSize * 0.32f else buttonSize / 2,
-        spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow),
+        mspring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow),
         label = "playCorner",
     )
     val cs = MaterialTheme.colorScheme
@@ -208,10 +209,10 @@ fun SkipButton(
     PressBox(
         onClick = {
             onClick()
-            scope.launch {
+            if (!PowerSave.reduceMotion) scope.launch {
                 nudge.snapTo(0f)
-                nudge.animateTo(direction * 9f, tween(90, easing = FastOutSlowInEasing))
-                nudge.animateTo(0f, spring(dampingRatio = 0.35f, stiffness = 450f))
+                nudge.animateTo(direction * 9f, mtween(90, easing = FastOutSlowInEasing))
+                nudge.animateTo(0f, mspring(dampingRatio = 0.35f, stiffness = 450f))
             }
         },
         modifier = modifier.size(boxSize),
@@ -235,18 +236,18 @@ fun ToggleIconButton(
     content: @Composable (tint: Color) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val tint by animateColorAsState(if (active) cs.primary else cs.onSurfaceVariant, tween(220), label = "toggleTint")
+    val tint by animateColorAsState(if (active) cs.primary else cs.onSurfaceVariant, mtween(220), label = "toggleTint")
     val pop = remember { Animatable(1f) }
     var first by remember { mutableStateOf(true) }
     LaunchedEffect(stateKey) {
         if (first) {
             first = false
-        } else {
+        } else if (!PowerSave.reduceMotion) {
             pop.snapTo(0.6f)
-            pop.animateTo(1f, spring(dampingRatio = 0.32f, stiffness = 420f))
+            pop.animateTo(1f, mspring(dampingRatio = 0.32f, stiffness = 420f))
         }
     }
-    val dot by animateFloatAsState(if (active) 1f else 0f, spring(dampingRatio = 0.55f, stiffness = 500f), label = "toggleDot")
+    val dot by animateFloatAsState(if (active) 1f else 0f, mspring(dampingRatio = 0.55f, stiffness = 500f), label = "toggleDot")
     PressBox(onClick = onClick, modifier = modifier.size(48.dp), pressedScale = 0.8f) {
         Box(Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }) { content(tint) }
         Box(
@@ -287,7 +288,7 @@ fun ActionPill(
             primary -> cs.primary
             else -> cs.secondaryContainer
         },
-        tween(200), label = "pillBg",
+        mtween(200), label = "pillBg",
     )
     val fg = when {
         !enabled -> cs.onSurface.copy(alpha = 0.38f)
@@ -297,9 +298,9 @@ fun ActionPill(
     PressBox(
         onClick = {
             onClick()
-            scope.launch {
+            if (!PowerSave.reduceMotion) scope.launch {
                 anim.snapTo(0f)
-                anim.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = if (spin) 120f else 260f))
+                anim.animateTo(1f, mspring(dampingRatio = 0.42f, stiffness = if (spin) 120f else 260f))
             }
         },
         modifier = modifier.height(42.dp),
@@ -311,7 +312,7 @@ fun ActionPill(
         // Текст и значок плавно перетекают при смене состояния («Играть» ⇄ «Пауза»), ширина таблетки анимируется
         AnimatedContent(
             targetState = label to icon,
-            transitionSpec = { fadeIn(tween(200, delayMillis = 60)) togetherWith fadeOut(tween(120)) },
+            transitionSpec = { fadeIn(mtween(200, delayMillis = 60)) togetherWith fadeOut(mtween(120)) },
             label = "pillContent",
         ) { (text, ic) ->
             Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -346,25 +347,28 @@ fun ActionPill(
 @Composable
 fun AnimatedHeart(saved: Boolean, trackKey: Any?, enabled: Boolean, description: String, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val tint by animateColorAsState(if (saved) cs.primary else cs.onSurfaceVariant, tween(250), label = "heartTint")
+    val tint by animateColorAsState(if (saved) cs.primary else cs.onSurfaceVariant, mtween(250), label = "heartTint")
     val scale = remember { Animatable(1f) }
     val burst = remember { Animatable(0f) }
     var prev by remember(trackKey) { mutableStateOf(saved) }
     LaunchedEffect(trackKey, saved) {
         val changed = saved != prev
         prev = saved
-        if (changed) {
+        if (changed && PowerSave.reduceMotion) {
+            // Без искр и отскока: сердечко просто меняет вид (цвет и заливка)
+            scale.snapTo(1f)
+        } else if (changed) {
             if (saved) {
                 launch {
                     burst.snapTo(0f)
-                    burst.animateTo(1f, tween(650, easing = LinearOutSlowInEasing))
+                    burst.animateTo(1f, mtween(650, easing = LinearOutSlowInEasing))
                 }
                 scale.snapTo(0.5f)
-                scale.animateTo(1f, spring(dampingRatio = 0.3f, stiffness = 380f))
+                scale.animateTo(1f, mspring(dampingRatio = 0.3f, stiffness = 380f))
             } else {
                 scale.snapTo(1f)
-                scale.animateTo(0.72f, tween(90))
-                scale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 500f))
+                scale.animateTo(0.72f, mtween(90))
+                scale.animateTo(1f, mspring(dampingRatio = 0.55f, stiffness = 500f))
             }
         }
     }
@@ -421,17 +425,19 @@ fun SlidingSelector(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val cs = MaterialTheme.colorScheme
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.5f)
             .clip(RoundedCornerShape(22.dp))
             .background(cs.surfaceContainerHigh)
             .padding(4.dp),
     ) {
         val segW = maxWidth / labels.size
-        val x by animateDpAsState(segW * selected, spring(dampingRatio = 0.72f, stiffness = 420f), label = "thumbX")
+        val x by animateDpAsState(segW * selected, mspring(dampingRatio = 0.72f, stiffness = 420f), label = "thumbX")
         Box(
             Modifier
                 .offset(x = x)
@@ -442,8 +448,8 @@ fun SlidingSelector(
         Row {
             labels.forEachIndexed { i, label ->
                 val sel = i == selected
-                val c by animateColorAsState(if (sel) cs.onPrimaryContainer else cs.onSurfaceVariant, tween(220), label = "segColor")
-                val sc by animateFloatAsState(if (sel) 1.15f else 1f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "segScale")
+                val c by animateColorAsState(if (sel) cs.onPrimaryContainer else cs.onSurfaceVariant, mtween(220), label = "segColor")
+                val sc by animateFloatAsState(if (sel) 1.15f else 1f, mspring(dampingRatio = 0.5f, stiffness = 500f), label = "segScale")
                 val src = remember { MutableInteractionSource() }
                 Column(
                     Modifier
@@ -451,7 +457,7 @@ fun SlidingSelector(
                         .height(52.dp)
                         .pressScale(src, 0.93f)
                         .clip(RoundedCornerShape(18.dp))
-                        .clickable(interactionSource = src, indication = null, role = Role.Tab) { onSelect(i) },
+                        .clickable(interactionSource = src, indication = null, enabled = enabled, role = Role.Tab) { onSelect(i) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -470,7 +476,7 @@ fun SelectorCaption(text: String) {
     AnimatedContent(
         targetState = text,
         transitionSpec = {
-            (fadeIn(tween(240, delayMillis = 70)) + slideInVertically(tween(280)) { it / 3 }) togetherWith fadeOut(tween(110))
+            (fadeIn(mtween(240, delayMillis = 70)) + slideInVertically(mtween(280)) { it / 3 }) togetherWith fadeOut(mtween(110))
         },
         label = "caption",
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
@@ -497,9 +503,11 @@ fun AppMenu(items: List<Pair<String, () -> Unit>>) {
     LaunchedEffect(open) {
         if (open) {
             shown = true
-            progress.animateTo(1f, tween(MENU_ANIM_MS, easing = FastOutSlowInEasing))
+            if (PowerSave.reduceMotion) progress.snapTo(1f)
+            else progress.animateTo(1f, mtween(MENU_ANIM_MS, easing = FastOutSlowInEasing))
         } else if (shown) {
-            progress.animateTo(0f, tween(MENU_ANIM_MS, easing = FastOutSlowInEasing))
+            if (PowerSave.reduceMotion) progress.snapTo(0f)
+            else progress.animateTo(0f, mtween(MENU_ANIM_MS, easing = FastOutSlowInEasing))
             shown = false
         }
     }
@@ -572,14 +580,16 @@ private fun AppMenuItem(index: Int, label: String, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val danger = label.startsWith("Удалить") || label.startsWith("Убрать")
     val color = if (danger) cs.error else cs.onSurface
-    val appear = remember { Animatable(0f) }
+    val calm = PowerSave.reduceMotion
+    val appear = remember { Animatable(if (calm) 1f else 0f) }
     LaunchedEffect(Unit) {
+        if (calm) return@LaunchedEffect
         delay(index * 35L)
-        appear.animateTo(1f, tween(240, easing = FastOutSlowInEasing))
+        appear.animateTo(1f, mtween(240, easing = FastOutSlowInEasing))
     }
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
-    val bg by animateColorAsState(if (pressed) color.copy(alpha = 0.12f) else Color.Transparent, tween(if (pressed) 60 else 250), label = "menuBg")
+    val bg by animateColorAsState(if (pressed) color.copy(alpha = 0.12f) else Color.Transparent, mtween(if (pressed) 60 else 250), label = "menuBg")
     val shape = RoundedCornerShape(16.dp)
     Row(
         Modifier
@@ -620,7 +630,9 @@ private fun menuIcon(label: String): ImageVector = when {
 /** Цвета темы перетекают друг в друга, а не меняются скачком (используется при переключении светлой/тёмной темы). */
 @Composable
 fun ColorScheme.animated(): ColorScheme {
-    val spec = tween<Color>(360)
+    // В режимах энергосбережения цвета меняются сразу: 28 одновременных анимаций цвета на каждый кадр перехода — дорого
+    if (PowerSave.reduceMotion) return this
+    val spec = mtween<Color>(360)
     @Composable
     fun a(c: Color): Color = animateColorAsState(c, spec, label = "theme").value
     return copy(

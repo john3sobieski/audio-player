@@ -126,7 +126,7 @@ internal fun LyricsScreen(vm: PlayerViewModel, miniPlayer: @Composable () -> Uni
                 )
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                Crossfade(targetState = lyrics, animationSpec = tween(250), label = "lyricsState") { l ->
+                Crossfade(targetState = lyrics, animationSpec = mtween(250), label = "lyricsState") { l ->
                     when (l) {
                         null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -226,14 +226,14 @@ private fun SyncedLyrics(vm: PlayerViewModel, lines: List<LyricLine>) {
                 scrolledTo = idx
                 val target = idx.coerceAtLeast(0)
                 job?.cancel()
-                if (first) {
+                if (first || PowerSave.reduceNow) {
                     first = false
                     listState.scrollToItem(target)
                 } else {
                     job = launch { listState.animateScrollToItem(target) }
                 }
             }
-            delay(100)
+            delay(PowerSave.lyricsTickMs())
         }
     }
 
@@ -258,8 +258,8 @@ private fun LyricRow(index: Int, current: Int, text: String, onClick: () -> Unit
         current < 0 || index > current -> ALPHA_UPCOMING
         else -> ALPHA_PAST
     }
-    val alpha by animateFloatAsState(targetAlpha, tween(350), label = "lyricAlpha")
-    val scale by animateFloatAsState(if (index == current) 1f else 0.93f, tween(350), label = "lyricScale")
+    val alpha by animateFloatAsState(targetAlpha, mtween(350), label = "lyricAlpha")
+    val scale by animateFloatAsState(if (index == current) 1f else 0.93f, mtween(350), label = "lyricScale")
     Text(
         text.ifEmpty { "♪" },
         modifier = Modifier
@@ -287,7 +287,7 @@ internal fun MiniProgress(vm: PlayerViewModel, durationMs: Long) {
     LaunchedEffect(vm.currentId) {
         while (true) {
             pos.longValue = vm.controller?.currentPosition ?: 0L
-            delay(250)
+            delay(if (PowerSave.reduceNow) PowerSave.progressTickMs().coerceAtLeast(500L) else 250L)
         }
     }
     val active = MaterialTheme.colorScheme.primary

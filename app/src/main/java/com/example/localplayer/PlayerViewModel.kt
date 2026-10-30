@@ -196,6 +196,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         library.saveTheme(mode)
     }
 
+    // ---------- Энергоэффективность ----------
+
+    val powerMode: PowerMode get() = PowerSave.mode
+
+    fun changePowerMode(mode: PowerMode) {
+        PowerSave.set(getApplication<Application>(), mode)
+        applyCoverCachePolicy()
+    }
+
     // ---------- Настройки звука ----------
     var monoEnabled by mutableStateOf(false)
         private set
@@ -536,6 +545,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var scanId = 0
 
     init {
+        PowerSave.load(app)
+        applyCoverCachePolicy()
         AudioFx.load(app)
         monoEnabled = AudioFx.mono
         normalizeEnabled = AudioFx.normalize
@@ -612,6 +623,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Заводские настройки: звук, эквалайзеры, сортировки. Плейлисты и выбранная папка остаются. */
     fun factoryReset(clearCache: Boolean) {
+        changePowerMode(PowerMode.OFF)
         AudioFx.resetAll()
         monoEnabled = false
         normalizeEnabled = false
@@ -656,9 +668,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         rescan(force = true)
     }
 
-    /** Вызывается при каждом входе в приложение: подхватывает добавленные и удалённые файлы. */
+    /**
+     * Вызывается при каждом входе в приложение: подхватывает добавленные и удалённые файлы.
+     * В интенсивном режиме автоматического сканирования нет: список обновляется только кнопкой.
+     */
     fun refresh() {
-        if (folder != null) rescan()
+        if (folder != null && !PowerSave.intensive) rescan()
     }
 
     fun rescan(force: Boolean = false) {

@@ -143,7 +143,7 @@ class ReorderState internal constructor(
         cb.onEnd()
         // Элемент плавно «садится» на своё место
         settleJob = scope.launch {
-            Animatable(offset).animateTo(0f, tween(140)) { offset = value }
+            Animatable(offset).animateTo(0f, mtween(140)) { offset = value }
             draggedKey = null
             offset = 0f
             ending = false
@@ -242,7 +242,7 @@ fun LazyItemScope.reorderableItem(state: ReorderState, key: Any): Modifier {
             fadeInSpec = null,
             fadeOutSpec = null,
             // У поднятой строки анимацию места отключаем: её положение задаёт палец
-            placementSpec = if (dragged || FastScroll.active) null else spring(
+            placementSpec = if (dragged || FastScroll.active || PowerSave.reduceMotion) null else mspring(
                 stiffness = Spring.StiffnessMediumLow,
                 visibilityThreshold = IntOffset.VisibilityThreshold,
             ),
@@ -280,7 +280,7 @@ fun SortBar(
     var menuOpen by remember { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(
         if (sort.descending) 180f else 0f,
-        animationSpec = tween(220),
+        animationSpec = mtween(220),
         label = "sortArrow",
     )
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -304,7 +304,7 @@ fun SortBar(
                     Spacer(Modifier.width(6.dp))
                     AnimatedContent(
                         targetState = sort.key,
-                        transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(100)) },
+                        transitionSpec = { fadeIn(mtween(150)) togetherWith fadeOut(mtween(100)) },
                         label = "sortLabel",
                     ) { key ->
                         Text(
@@ -343,7 +343,7 @@ fun SortBar(
             ) {
                 AnimatedContent(
                     targetState = sort.descending,
-                    transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(100)) },
+                    transitionSpec = { fadeIn(mtween(150)) togetherWith fadeOut(mtween(100)) },
                     label = "sortDirection",
                 ) { desc ->
                     Text(
