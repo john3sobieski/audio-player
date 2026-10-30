@@ -23,6 +23,7 @@ class Library(private val ctx: Context) {
 
     private val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
     private val playlistsFile = File(ctx.filesDir, "playlists.json")
+    private val queuesFile = File(ctx.filesDir, "queues.json")
     private val cacheFile = File(ctx.filesDir, "tracks_cache.json")
     private val addedFile = File(ctx.filesDir, "added.json")
 
@@ -251,6 +252,40 @@ class Library(private val ctx: Context) {
             playlistsFile.writeText(arr.toString())
         } catch (_: Exception) {
         }
+    }
+
+    // ---------- Очереди ----------
+
+    /** Всегда возвращает ровно [QUEUE_COUNT] очередей: недостающие создаются пустыми, лишние отбрасываются. */
+    fun loadQueues(): List<PlayQueue> {
+        val byId = HashMap<Int, List<String>>()
+        try {
+            val arr = JSONArray(queuesFile.readText())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val uris = o.getJSONArray("tracks")
+                byId[o.getInt("id")] = List(uris.length()) { uris.getString(it) }.distinct()
+            }
+        } catch (_: Exception) {
+        }
+        return List(QUEUE_COUNT) { PlayQueue(it, byId[it] ?: emptyList()) }
+    }
+
+    fun saveQueues(list: List<PlayQueue>) {
+        try {
+            val arr = JSONArray()
+            for (q in list) {
+                arr.put(JSONObject().put("id", q.id).put("tracks", JSONArray(q.trackUris)))
+            }
+            queuesFile.writeText(arr.toString())
+        } catch (_: Exception) {
+        }
+    }
+
+    fun loadSelectedQueue(): Int = prefs.getInt("queue_selected", 0).coerceIn(0, QUEUE_COUNT - 1)
+
+    fun saveSelectedQueue(index: Int) {
+        prefs.edit().putInt("queue_selected", index).apply()
     }
 
     // ---------- Сортировка и ручной порядок ----------

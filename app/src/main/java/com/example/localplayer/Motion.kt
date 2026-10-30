@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -605,7 +606,10 @@ private fun menuIcon(label: String): ImageVector = when {
     label.startsWith("Переименовать") -> Icons.Default.Edit
     label.startsWith("Удалить") -> Icons.Default.Delete
     label.startsWith("Убрать") -> Icons.Default.RemoveCircleOutline
+    label.startsWith("Добавить в очередь") -> Icons.AutoMirrored.Filled.QueueMusic
     label.startsWith("Добавить") -> Icons.AutoMirrored.Filled.PlaylistAdd
+    label.startsWith("Переместить вверх") -> Icons.Default.ArrowUpward
+    label.startsWith("Переместить вниз") -> Icons.Default.ArrowDownward
     else -> Icons.Default.MoreVert
 }
 

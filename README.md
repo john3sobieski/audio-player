@@ -11,6 +11,7 @@ No ads, no accounts, no internet access required. Everything stays on your devic
 - **Your music, your folder.** Pick a folder once; Radiant scans it and its subfolders and rescans every time you open the app. It uses Android's Storage Access Framework, so it cannot see anything outside that folder.
 - **Library:** Playlists, Albums (grouped automatically from file tags) and Tracks, with search and sorting in every section.
 - **Playlists:** create, rename, delete, add and remove tracks. *Liked tracks* is always pinned at the top.
+- **Queues:** a fourth section with exactly four fixed queues (they can't be created or deleted). Add tracks from the player button or the "⋮" menu, remove them, and reorder by long-press drag or "move up / down".
 - **Drag to reorder** playlists, albums and tracks with a long press.
 - **Background playback** with a media notification, lock screen controls and headset button support.
 - **Player:** play/pause, next/previous, seek, shuffle, repeat (off / all / one), cover art, and a quality badge for the file format and bitrate.

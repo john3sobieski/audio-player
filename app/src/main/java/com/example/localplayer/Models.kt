@@ -34,6 +34,17 @@ data class Playlist(
 const val FAVORITES_ID = "favorites"
 const val FAVORITES_NAME = "Понравившиеся треки"
 
+/** Количество очередей: всегда ровно четыре, их нельзя ни создать, ни удалить. */
+const val QUEUE_COUNT = 4
+
+/** Очередь прослушивания. Всего их [QUEUE_COUNT]; у каждой фиксированный номер [id] (0..3) и имя «Очередь N». */
+data class PlayQueue(
+    val id: Int,
+    val trackUris: List<String>,
+) {
+    val name: String get() = "Очередь ${id + 1}"
+}
+
 /** Тема оформления. По умолчанию — [SYSTEM]: следует за настройкой телефона. */
 enum class ThemeMode(val label: String, val description: String) {
     LIGHT("Ясный", "Светлое оформление"),

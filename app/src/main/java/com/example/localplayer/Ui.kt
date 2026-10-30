@@ -83,6 +83,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Check
@@ -143,6 +144,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -302,6 +304,9 @@ fun App(vm: PlayerViewModel) {
     vm.trackForPlaylist?.let { t ->
         AddToPlaylistDialog(vm, t)
     }
+    vm.trackForQueue?.let { t ->
+        AddToQueueDialog(vm, t)
+    }
     if (vm.newPlaylistDialog) {
         NameDialog(
             title = "Новый плейлист",
@@ -416,6 +421,7 @@ private fun SearchField(vm: PlayerViewModel) {
                 when (vm.tab) {
                     0 -> "Поиск плейлистов"
                     1 -> "Поиск альбомов"
+                    2 -> "Поиск в очереди"
                     else -> "Поиск треков"
                 },
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -440,6 +446,7 @@ private fun LibraryNavBar(vm: PlayerViewModel) {
     val items = listOf(
         "Плейлисты" to Icons.AutoMirrored.Filled.PlaylistPlay,
         "Альбомы" to Icons.Default.Album,
+        "Очереди" to Icons.AutoMirrored.Filled.QueueMusic,
         "Треки" to Icons.Default.LibraryMusic,
     )
     Surface(color = cs.surfaceContainer) {
@@ -486,7 +493,7 @@ private fun LibraryNavBar(vm: PlayerViewModel) {
 }
 
 // =====================================================================
-// Библиотека: 3 вкладки
+// Библиотека: 4 вкладки
 // =====================================================================
 
 @Composable
@@ -501,7 +508,7 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         }
         // Вкладки — страницы горизонтального пейджера: переход прерывается и перенаправляется на лету,
         // поэтому при быстром переключении страницы не накладываются друг на друга. Работает и свайп.
-        val pagerState = rememberPagerState(initialPage = vm.tab) { 3 }
+        val pagerState = rememberPagerState(initialPage = vm.tab) { 4 }
         // pending — страница, к которой мы сами прокручиваем по нажатию на нижнюю панель. Пока она не достигнута,
         // промежуточные остановки пейджера не считаются выбором пользователя (раньше они возвращали вкладку назад
         // и из-за этого переход «залипал»).
@@ -538,6 +545,7 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
                 when (page) {
                     0 -> PlaylistsTab(vm)
                     1 -> AlbumsTab(vm)
+                    2 -> QueuesTab(vm)
                     else -> TracksTab(vm)
                 }
             }
@@ -615,7 +623,10 @@ private fun TracksTab(vm: PlayerViewModel) {
                     current = vm.currentId == t.uri,
                     number = i + 1,
                     onClick = { vm.play(list, i) },
-                    menu = listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }),
+                    menu = listOf(
+                        "Добавить в плейлист" to { vm.trackForPlaylist = t },
+                        "Добавить в очередь" to { vm.trackForQueue = t },
+                    ),
                     modifier = reorderableItem(reorder, t.uri),
                 )
             }
@@ -738,6 +749,104 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
 }
 
 // =====================================================================
+// Раздел «Очереди»
+// =====================================================================
+
+/**
+ * Раздел «Очереди»: сверху компактный переключатель между четырьмя очередями (как нижняя панель, только меньше),
+ * ниже — треки выбранной очереди. Треки можно переставлять (долгое нажатие или пункты меню), убирать и запускать.
+ */
+@Composable
+private fun QueuesTab(vm: PlayerViewModel) {
+    val queue = vm.queues.getOrNull(vm.selectedQueue) ?: return
+    val query = vm.activeQuery
+    val all = vm.queueTracks(queue)
+    val shown = remember(all, query) { if (query.isEmpty()) all else all.filter { it.matches(query) } }
+    val searching = query.isNotEmpty()
+
+    Column(Modifier.fillMaxSize()) {
+        QueueSwitcher(vm)
+        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        // Своё состояние списка у каждой очереди: при переключении прокрутка и перетаскивание начинаются заново
+        key(queue.id) {
+            TrackListScreen(
+                vm = vm,
+                header = "${queue.name} · ${all.size} ${plural(all.size)}",
+                list = shown,
+                emptyText = if (searching) "Ничего не найдено" else "${queue.name} пуста. Добавляйте треки через меню «⋮» в списках или кнопкой очередей в плеере.",
+                menuFor = { t ->
+                    val i = shown.indexOfFirst { it.uri == t.uri }
+                    buildList {
+                        // Во время поиска порядок не меняем (как и при перетаскивании)
+                        if (!searching && i > 0) add("Переместить вверх" to { vm.moveInQueue(queue.id, t, -1) })
+                        if (!searching && i in 0 until shown.lastIndex) add("Переместить вниз" to { vm.moveInQueue(queue.id, t, 1) })
+                        add("Убрать из очереди" to { vm.removeFromQueue(queue.id, t) })
+                    }
+                },
+                sourceKey = "queue:${queue.id}",
+                onReorder = if (searching) null else ({ uris -> vm.reorderQueueTracks(queue.id, uris) }),
+            )
+        }
+    }
+}
+
+/** Компактный переключатель очередей: капсула с четырьмя сегментами и «плашкой» выбранной очереди, которая переезжает на пружине. */
+@Composable
+private fun QueueSwitcher(vm: PlayerViewModel) {
+    val cs = MaterialTheme.colorScheme
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerHigh),
+        ) {
+            val segW = maxWidth / QUEUE_COUNT
+            val pillX by animateDpAsState(
+                segW * vm.selectedQueue,
+                spring(dampingRatio = 0.75f, stiffness = 480f),
+                label = "queuePill",
+            )
+            Box(
+                Modifier
+                    .offset(x = pillX)
+                    .padding(3.dp)
+                    .size(width = segW - 6.dp, height = 30.dp)
+                    .background(cs.secondaryContainer, RoundedCornerShape(15.dp)),
+            )
+            Row(Modifier.fillMaxSize()) {
+                vm.queues.forEach { q ->
+                    val selected = vm.selectedQueue == q.id
+                    val textColor by animateColorAsState(
+                        if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant, tween(220), label = "queueText",
+                    )
+                    val src = remember { MutableInteractionSource() }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .pressScale(src, 0.95f)
+                            .clickable(interactionSource = src, indication = null, role = Role.Tab) {
+                                if (!selected) {
+                                    vm.selectQueue(q.id)
+                                    vm.searchQuery = "" // у каждой очереди свой список: старый запрос к новой не относится
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            q.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = textColor,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =====================================================================
 // Экраны альбома и плейлиста
 // =====================================================================
 
@@ -751,7 +860,12 @@ private fun AlbumScreen(vm: PlayerViewModel, key: String) {
         list = album.tracks,
         showCovers = false, // внутри альбома обложка у всех треков одна: показываем её один раз сверху
         coverUri = album.tracks.firstOrNull()?.uri,
-        menuFor = { t -> listOf("Добавить в плейлист" to { vm.trackForPlaylist = t }) },
+        menuFor = { t ->
+            listOf(
+                "Добавить в плейлист" to { vm.trackForPlaylist = t },
+                "Добавить в очередь" to { vm.trackForQueue = t },
+            )
+        },
         sourceKey = "album:$key",
     )
 }
@@ -766,7 +880,12 @@ private fun PlaylistScreen(vm: PlayerViewModel, id: String) {
         header = "${list.size} ${plural(list.size)}",
         list = list,
         emptyText = "Плейлист пуст. Добавляйте треки через меню «⋮» на вкладках «Треки» и «Альбомы».",
-        menuFor = { t -> listOf("Убрать из плейлиста" to { vm.removeFromPlaylist(pl.id, t) }) },
+        menuFor = { t ->
+            listOf(
+                "Добавить в очередь" to { vm.trackForQueue = t },
+                "Убрать из плейлиста" to { vm.removeFromPlaylist(pl.id, t) },
+            )
+        },
         sourceKey = "playlist:$id",
         onReorder = { uris -> vm.reorderPlaylistTracks(pl.id, uris) },
     )
@@ -1036,6 +1155,65 @@ private fun PlaylistPickRow(vm: PlayerViewModel, p: Playlist, track: Track, favo
     }
 }
 
+/**
+ * Окно выбора очереди для трека (кнопка очередей в плеере и пункт «Добавить в очередь» в меню «⋮»).
+ * По виду то же, что и окно плейлистов, но строки крупнее: очередей всегда четыре. Нажатие добавляет трек в конец очереди
+ * или, если он там уже есть, убирает; галочка показывает, в каких очередях трек уже лежит.
+ */
+@Composable
+private fun AddToQueueDialog(vm: PlayerViewModel, track: Track) {
+    val close = { vm.trackForQueue = null }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 560.dp).fillMaxWidth(),
+        ) {
+            Column {
+                Text(
+                    "Добавить в очередь",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                )
+                vm.queues.forEach { q -> QueuePickRow(vm, q, track) }
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = close) { Text("Готово") }
+                }
+            }
+        }
+    }
+}
+
+/** Просторная строка очереди в окне выбора: название, число треков и галочка, если трек уже в этой очереди. */
+@Composable
+private fun QueuePickRow(vm: PlayerViewModel, q: PlayQueue, track: Track) {
+    val n = vm.queueTracks(q).size
+    val contains = track.uri in q.trackUris
+    Row(
+        Modifier.fillMaxWidth().clickable { vm.toggleQueueMembership(q.id, track) }
+            .heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.QueueMusic, null, Modifier.size(24.dp),
+            tint = if (contains) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+            Text(q.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "$n ${plural(n)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box(Modifier.size(24.dp)) {
+            if (contains) Icon(Icons.Default.Check, "В очереди", tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
 @Composable
 private fun NameDialog(title: String, initial: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(initial) }
@@ -1090,6 +1268,9 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = 8.dp),
                 )
+                Spacer(Modifier.weight(1f))
+                // «О треке» стоит в правом верхнем углу, на одной линии с надписью «Сейчас играет»
+                TrackInfoButton(enabled = t != null) { showInfo = true }
             }
             // Обложка растёт на высоких экранах, чтобы плеер занимал всю высоту без пустой полосы внизу.
             // На низких экранах содержимое прокручивается: панель звука не помещается рядом с обложкой.
@@ -1107,7 +1288,9 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                     Cover(t?.uri, coverSize)
                     Spacer(Modifier.height(24.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        TrackInfoButton(enabled = t != null) { showInfo = true }
+                        QueueButton(inQueue = t != null && t.uri in vm.queuedUris, enabled = t != null) {
+                            t?.let { vm.trackForQueue = it }
+                        }
                         AnimatedContent(
                             targetState = t,
                             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
@@ -1143,7 +1326,26 @@ private fun PlayerScreen(vm: PlayerViewModel) {
     if (showInfo && t != null) TrackInfoDialog(vm, t) { showInfo = false }
 }
 
-/** Круглая кнопка «i» слева от названия: открывает окно со всеми данными о треке. */
+/**
+ * Кнопка очередей слева от названия: открывает окно выбора очереди (всего их четыре), в которую добавляется трек.
+ * Значок закрашен цветом темы, если трек уже лежит хотя бы в одной очереди.
+ */
+@Composable
+private fun QueueButton(inQueue: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val tint = if (inQueue) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        Modifier.size(40.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.QueueMusic,
+            contentDescription = if (inQueue) "Изменить очереди трека" else "Добавить в очередь",
+            tint = tint,
+        )
+    }
+}
+
+/** Круглая кнопка «i» в правом верхнем углу плеера: открывает окно со всеми данными о треке. */
 @Composable
 private fun TrackInfoButton(enabled: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme.onSurfaceVariant

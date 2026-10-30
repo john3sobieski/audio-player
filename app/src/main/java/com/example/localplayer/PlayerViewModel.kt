@@ -53,6 +53,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var scanning by mutableStateOf(false)
         private set
+    /** Четыре очереди (всегда ровно [QUEUE_COUNT]). */
+    var queues by mutableStateOf(library.loadQueues())
+        private set
+    /** Какая очередь открыта в разделе «Очереди» (0..3). */
+    var selectedQueue by mutableIntStateOf(library.loadSelectedQueue())
+        private set
 
     val trackByUri by derivedStateOf { tracks.associateBy { it.uri } }
 
@@ -451,6 +457,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Диалоги ----------
     var trackForPlaylist by mutableStateOf<Track?>(null)
+    /** Трек, для которого открыто окно выбора очереди. */
+    var trackForQueue by mutableStateOf<Track?>(null)
     var newPlaylistDialog by mutableStateOf(false)
     var newPlaylistFirstTrack by mutableStateOf<Track?>(null)
     var renameTarget by mutableStateOf<Playlist?>(null)
@@ -816,6 +824,71 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun playlistTracks(p: Playlist): List<Track> = p.trackUris.mapNotNull { trackByUri[it] }
+
+    // ---------- Очереди ----------
+
+    private fun commitQueues(list: List<PlayQueue>) {
+        queues = list
+        library.saveQueues(list)
+    }
+
+    private fun updateQueue(id: Int, change: (List<String>) -> List<String>) {
+        commitQueues(queues.map { if (it.id == id) it.copy(trackUris = change(it.trackUris)) else it })
+    }
+
+    fun selectQueue(index: Int) {
+        val i = index.coerceIn(0, QUEUE_COUNT - 1)
+        selectedQueue = i
+        library.saveSelectedQueue(i)
+    }
+
+    fun queueTracks(q: PlayQueue): List<Track> = q.trackUris.mapNotNull { trackByUri[it] }
+
+    /** URI треков, которые есть хотя бы в одной очереди (подсветка кнопки очередей в плеере). */
+    val queuedUris by derivedStateOf {
+        HashSet<String>().also { set -> queues.forEach { set.addAll(it.trackUris) } }
+    }
+
+    /** В окне выбора очереди: нажатие добавляет трек в конец очереди или, если он там уже есть, убирает. */
+    fun toggleQueueMembership(id: Int, track: Track) {
+        val q = queues.firstOrNull { it.id == id } ?: return
+        if (track.uri in q.trackUris) removeFromQueue(id, track) else addToQueue(id, track)
+    }
+
+    fun addToQueue(id: Int, track: Track) {
+        updateQueue(id) { if (track.uri in it) it else it + track.uri }
+    }
+
+    fun removeFromQueue(id: Int, track: Track) {
+        updateQueue(id) { it - track.uri }
+    }
+
+    /**
+     * Сдвигает трек на одну позицию вверх ([delta] = −1) или вниз (+1) относительно ближайшего соседа, которого видно в списке
+     * (файлы, пропавшие из библиотеки, не мешают).
+     */
+    fun moveInQueue(id: Int, track: Track, delta: Int) {
+        updateQueue(id) { uris ->
+            val visible = uris.filter { it in trackByUri }
+            val vi = visible.indexOf(track.uri)
+            val neighbour = visible.getOrNull(vi + delta)
+            if (vi < 0 || neighbour == null) uris
+            else uris.toMutableList().apply {
+                val from = indexOf(track.uri)
+                removeAt(from)
+                val at = indexOf(neighbour)
+                add(if (delta > 0) at + 1 else at, track.uri)
+            }
+        }
+    }
+
+    /** Новый порядок треков очереди после перетаскивания. Недоступные сейчас файлы остаются в конце. */
+    fun reorderQueueTracks(id: Int, shown: List<String>) {
+        updateQueue(id) { uris ->
+            val shownSet = shown.toHashSet()
+            shown + uris.filter { it !in shownSet }
+        }
+    }
 
     override fun onCleared() {
         controller?.removeListener(listener)
