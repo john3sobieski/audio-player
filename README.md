@@ -67,8 +67,8 @@ Issues and pull requests are welcome. For larger changes, please open an issue f
 
 ## License
 
-Radiant is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+Radiant is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
 
 You are free to use, study, modify and share it for any **noncommercial** purpose, including personal use, hobby projects, education and non-profit organizations. **Commercial use is not permitted** without a separate agreement, so you may not sell the app or publish it for profit. If you would like to use Radiant commercially, please get in touch by opening an issue in this repository.
 
-Please keep the `LICENSE` file and its `Required Notice` line with any copy you share.
+Please keep the `LICENSE.md` file and its `Required Notice` line with any copy you share.
