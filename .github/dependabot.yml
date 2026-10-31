@@ -1,0 +1,55 @@
+version: 2
+
+updates:
+  # Gradle-зависимости (Compose, Media3, AndroidX, плагины)
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps"
+    groups:
+      androidx:
+        patterns:
+          - "androidx.*"
+      compose:
+        patterns:
+          - "androidx.compose.*"
+          - "org.jetbrains.compose.*"
+      media3:
+        patterns:
+          - "androidx.media3:*"
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "com.google.devtools.ksp*"
+      gradle-plugins:
+        patterns:
+          - "com.android.*"
+          - "*gradle*plugin*"
+    ignore:
+      # Мажорные обновления Kotlin/AGP лучше делать вручную
+      - dependency-name: "org.jetbrains.kotlin*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "com.android.*"
+        update-types: ["version-update:semver-major"]
+
+  # Версии GitHub Actions в workflow-файлах
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
