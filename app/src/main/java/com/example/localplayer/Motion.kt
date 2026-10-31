@@ -15,7 +15,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,6 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -74,11 +77,47 @@ import kotlin.math.sin
 /** Пружина нажатия: быстрая, с небольшим отскоком. */
 private fun <T> pressSpring() = mspring<T>(dampingRatio = 0.5f, stiffness = 650f)
 
+/** Нажатие без визуальной «ряби» (энергосбережение). */
+internal object NoIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode = object : Modifier.Node() {}
+    override fun hashCode(): Int = -1
+    override fun equals(other: Any?): Boolean = other === this
+}
+
+/**
+ * Переключатель. В обычном режиме — стандартный Switch с его анимацией; при энергосбережении — такой же по виду,
+ * но без движения: ползунок сразу встаёт на место.
+ */
+@Composable
+fun AppSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    if (!PowerSave.reduceMotion) {
+        Switch(checked = checked, onCheckedChange = onCheckedChange, modifier = modifier, enabled = enabled)
+        return
+    }
+    val cs = MaterialTheme.colorScheme
+    val track = if (checked) cs.primary else cs.surfaceContainerHighest
+    val thumb = if (checked) cs.onPrimary else cs.outline
+    val shape = CircleShape
+    Box(
+        modifier
+            .alpha(if (enabled) 1f else 0.38f)
+            .size(width = 52.dp, height = 32.dp)
+            .clip(shape)
+            .background(track, shape)
+            .then(if (checked) Modifier else Modifier.border(2.dp, cs.outline, shape))
+            .clickable(enabled = enabled, role = Role.Switch) { onCheckedChange(!checked) }
+            .padding(horizontal = if (checked) 4.dp else 8.dp),
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Box(Modifier.size(if (checked) 24.dp else 16.dp).background(thumb, CircleShape))
+    }
+}
+
 /** Масштаб при нажатии. Применять до clickable/clip, чтобы масштабировался весь элемент. */
 @Composable
 fun Modifier.pressScale(source: InteractionSource, pressedScale: Float = 0.88f): Modifier {
     val pressed by source.collectIsPressedAsState()
-    val s by animateFloatAsState(if (pressed) pressedScale else 1f, pressSpring(), label = "pressScale")
+    val s by animateFloatAsState(if (pressed && !PowerSave.reduceMotion) pressedScale else 1f, pressSpring(), label = "pressScale")
     return this.graphicsLayer {
         scaleX = s
         scaleY = s
@@ -127,7 +166,7 @@ fun Modifier.pressableRow(onClick: () -> Unit, highlighted: Boolean = false): Mo
         mtween(if (pressed) 80 else 380),
         label = "rowBg",
     )
-    val s by animateFloatAsState(if (pressed) 0.972f else 1f, mspring(dampingRatio = 0.55f, stiffness = 500f), label = "rowScale")
+    val s by animateFloatAsState(if (pressed && !PowerSave.reduceMotion) 0.972f else 1f, mspring(dampingRatio = 0.55f, stiffness = 500f), label = "rowScale")
     val shape = RoundedCornerShape(16.dp)
     return this
         .graphicsLayer {

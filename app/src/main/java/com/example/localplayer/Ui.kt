@@ -31,6 +31,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkOut
+import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
@@ -45,6 +49,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -404,23 +409,25 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
             }
         },
         navigationIcon = {
-            AnimatedVisibility(visible = screen != null) {
+            AnimatedVisibility(
+                visible = screen != null,
+                enter = calmEnter(fadeIn() + expandIn()),
+                exit = calmExit(shrinkOut() + fadeOut()),
+            ) {
                 IconButton(onClick = { vm.pop() }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                 }
             }
         },
         actions = {
-            // Интенсивный режим: автоматического сканирования нет, список обновляется этой кнопкой
-            if (PowerSave.intensive && screen == null && vm.folder != null) {
-                IconButton(onClick = { vm.rescan() }, enabled = !vm.scanning) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Сканировать папку")
-                }
-            }
             // Лупа стоит слева от шестерёнки; при открытом поиске превращается в крестик
-            AnimatedVisibility(visible = screen == null && vm.folder != null) {
+            AnimatedVisibility(
+                visible = screen == null && vm.folder != null,
+                enter = calmEnter(fadeIn() + expandHorizontally()),
+                exit = calmExit(shrinkHorizontally() + fadeOut()),
+            ) {
                 IconButton(onClick = { if (searching) vm.closeSearch() else vm.openSearch() }) {
-                    Crossfade(targetState = searching, label = "searchIcon") { isOpen ->
+                    Crossfade(targetState = searching, animationSpec = mtween(300), label = "searchIcon") { isOpen ->
                         Icon(
                             if (isOpen) Icons.Default.Close else Icons.Default.Search,
                             contentDescription = if (isOpen) "Закрыть поиск" else "Поиск",
@@ -428,7 +435,11 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
                     }
                 }
             }
-            AnimatedVisibility(visible = screen == null) {
+            AnimatedVisibility(
+                visible = screen == null,
+                enter = calmEnter(fadeIn() + expandHorizontally()),
+                exit = calmExit(shrinkHorizontally() + fadeOut()),
+            ) {
                 IconButton(onClick = { vm.push(Screen.Settings) }) {
                     Icon(Icons.Default.Settings, contentDescription = "Настройки")
                 }
@@ -539,7 +550,11 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         return
     }
     Column(Modifier.fillMaxSize()) {
-        AnimatedVisibility(visible = vm.scanning) {
+        AnimatedVisibility(
+            visible = vm.scanning,
+            enter = calmEnter(fadeIn() + expandVertically()),
+            exit = calmExit(shrinkVertically() + fadeOut()),
+        ) {
             if (PowerSave.reduceMotion) {
                 // Бесконечная анимация индикатора будит экран на каждом кадре: вместо неё статичная подпись
                 Text(
@@ -587,6 +602,9 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             // Соседние страницы собираются заранее: переход не ждёт отрисовки тяжёлого списка треков
             // В интенсивном режиме страницы заранее не собираются: меньше памяти и работы процессора
             beyondViewportPageCount = PowerSave.pagerBeyondCount(),
+            // Энергосбережение: после свайпа страница встаёт на место сразу, без доводки
+            flingBehavior = if (PowerSave.reduceMotion) PagerDefaults.flingBehavior(state = pagerState, snapAnimationSpec = snap())
+            else PagerDefaults.flingBehavior(state = pagerState),
             key = { it },
         ) { page ->
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -1530,15 +1548,16 @@ private fun QualityBadge(info: AudioInfo?) {
 @Composable
 private fun SoundPanel(vm: PlayerViewModel) {
     var dialog by remember { mutableStateOf<Int?>(null) }
+    val lk = PowerSave.intensive // интенсивный режим: все кнопки заблокированы
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        SoundButton("Bass", Icons.Default.Speaker, vm.bassEnabled, Modifier.weight(1f)) { dialog = 0 }
-        SoundButton("Treble", Icons.Default.GraphicEq, vm.trebleEnabled, Modifier.weight(1f)) { dialog = 1 }
-        SoundButton("Subsonic", Icons.Default.Waves, vm.subEnabled, Modifier.weight(1f)) { dialog = 2 }
-        SoundButton("EQ", Icons.Default.Equalizer, vm.eqMode != EqMode.OFF, Modifier.weight(1f)) { vm.openPlayerEqualizer() }
+        SoundButton("Bass", Icons.Default.Speaker, vm.bassEnabled && !lk, Modifier.weight(1f), lk) { dialog = 0 }
+        SoundButton("Treble", Icons.Default.GraphicEq, vm.trebleEnabled && !lk, Modifier.weight(1f), lk) { dialog = 1 }
+        SoundButton("Subsonic", Icons.Default.Waves, vm.subEnabled && !lk, Modifier.weight(1f), lk) { dialog = 2 }
+        SoundButton("EQ", Icons.Default.Equalizer, vm.eqMode != EqMode.OFF && !lk, Modifier.weight(1f), lk) { vm.openPlayerEqualizer() }
         // Включённая скорость показывается прямо на плитке («1,5x»)
         SoundButton(
-            if (vm.speedEnabled) speedLabel(vm.speedValue) else "Speed",
-            Icons.Default.Speed, vm.speedEnabled, Modifier.weight(1f),
+            if (vm.speedEnabled && !lk) speedLabel(vm.speedValue) else "Speed",
+            Icons.Default.Speed, vm.speedEnabled && !lk, Modifier.weight(1f), lk,
         ) { dialog = 3 }
     }
     dialog?.let { d ->
@@ -1562,7 +1581,7 @@ private fun SoundPanel(vm: PlayerViewModel) {
  * Включённый эффект заливается цветом темы, выключенный — спокойная серая плитка без рамки.
  */
 @Composable
-private fun SoundButton(label: String, icon: ImageVector, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun SoundButton(label: String, icon: ImageVector, active: Boolean, modifier: Modifier, locked: Boolean = false, onClick: () -> Unit) {
     val bg by animateColorAsState(
         if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
         mtween(220), label = "soundTileBg",
@@ -1575,9 +1594,10 @@ private fun SoundButton(label: String, icon: ImageVector, active: Boolean, modif
     Column(
         modifier
             .pressScale(source, pressedScale = 0.94f)
+            .graphicsLayer { alpha = if (locked) 0.38f else 1f }
             .clip(RoundedCornerShape(18.dp))
             .background(bg)
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .clickable(interactionSource = source, indication = null, enabled = !locked, onClick = onClick)
             .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1601,17 +1621,22 @@ private fun FxControl(
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val locked = PowerSave.intensive
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    if (enabled) valueText else "Выключено",
+                    when {
+                        locked -> "Заблокировано интенсивным режимом энергосбережения"
+                        enabled -> valueText
+                        else -> "Выключено"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = enabled, onCheckedChange = onToggle)
+            AppSwitch(checked = enabled && !locked, onCheckedChange = onToggle, enabled = !locked)
         }
         Slider(
             value = value,
@@ -1619,7 +1644,7 @@ private fun FxControl(
             onValueChangeFinished = onFinish,
             valueRange = range,
             steps = steps,
-            enabled = enabled,
+            enabled = enabled && !locked,
         )
     }
 }
@@ -1680,15 +1705,15 @@ private fun SpeedControl(vm: PlayerViewModel, modifier: Modifier = Modifier) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             TextButton(
                 onClick = { vm.changeSpeedValue(vm.speedValue - 0.1f); vm.commitSound() },
-                enabled = vm.speedEnabled && vm.speedValue > AudioFx.SPEED_MIN + 0.05f,
+                enabled = !PowerSave.intensive && vm.speedEnabled && vm.speedValue > AudioFx.SPEED_MIN + 0.05f,
             ) { Text("Медленнее") }
             TextButton(
                 onClick = { vm.changeSpeedValue(0f); vm.commitSound() },
-                enabled = vm.speedEnabled && vm.speedValue != 0f,
+                enabled = !PowerSave.intensive && vm.speedEnabled && vm.speedValue != 0f,
             ) { Text("1x") }
             TextButton(
                 onClick = { vm.changeSpeedValue(vm.speedValue + 0.1f); vm.commitSound() },
-                enabled = vm.speedEnabled && vm.speedValue < AudioFx.SPEED_MAX - 0.05f,
+                enabled = !PowerSave.intensive && vm.speedEnabled && vm.speedValue < AudioFx.SPEED_MAX - 0.05f,
             ) { Text("Быстрее") }
         }
     }
@@ -1860,21 +1885,16 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             Button(onClick = pickFolder, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Выбрать папку")
             }
-            if (PowerSave.intensive) {
-                // Интенсивный режим: список обновляется только по этой кнопке
-                FilledTonalButton(
-                    onClick = { vm.rescan() },
-                    enabled = vm.folder != null && !vm.scanning,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Сканировать папку")
-                }
-            }
-            OutlinedButton(
-                onClick = { vm.rescan(force = true) },
+            // Одна кнопка. В интенсивном режиме это единственный способ обновить список (быстрое сканирование),
+            // в остальных режимах — полное пересканирование, как и раньше.
+            FilledTonalButton(
+                onClick = { vm.rescan(force = !PowerSave.intensive) },
                 enabled = vm.folder != null && !vm.scanning,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Пересканировать папку") }
+            ) {
+                Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp))
+                Text(if (PowerSave.intensive) "Сканировать папку" else "Пересканировать папку")
+            }
             Text(
                 if (PowerSave.intensive) {
                     "Интенсивный режим: автоматического сканирования нет. Новые и удалённые файлы подхватываются только по кнопке «Сканировать папку»."
@@ -1942,8 +1962,8 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             ) {
                 Text(
-                    "Интенсивный режим: громкость плеера не выше 40%, звук только моно, а эквалайзер, басы, требл, " +
-                        "subsonic и нормализация отключены. Их настройки сохранены и вернутся при выходе из режима.",
+                    "Интенсивный режим: громкость плеера не выше 40%, звук только моно, а скорость, эквалайзер, басы, требл, " +
+                        "subsonic и нормализация заблокированы. Их настройки сохранены и вернутся при выходе из режима.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.padding(12.dp),
@@ -1963,19 +1983,26 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         )
         SwitchRow(
             title = "Нормализация громкости",
-            subtitle = "Выравнивает громкость разных треков, чтобы не крутить ползунок вручную",
-            checked = vm.normalizeEnabled,
+            subtitle = if (PowerSave.intensive) "Заблокировано интенсивным режимом энергосбережения"
+            else "Выравнивает громкость разных треков, чтобы не крутить ползунок вручную",
+            checked = vm.normalizeEnabled && !PowerSave.intensive,
             onChange = { vm.changeNormalize(it) },
+            enabled = !PowerSave.intensive,
         )
         BassControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         TrebleControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         SubsonicControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         SpeedControl(vm, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         ListItem(
-            modifier = Modifier.clickable { vm.push(Screen.Equalizer) },
+            modifier = Modifier.clickable(enabled = !PowerSave.intensive) { vm.push(Screen.Equalizer) },
             leadingContent = { Icon(Icons.Default.Equalizer, null) },
             headlineContent = { Text("Эквалайзер") },
-            supportingContent = { Text("12 полос · режим: ${eqModeLabel(vm.eqMode)}") },
+            supportingContent = {
+                Text(
+                    if (PowerSave.intensive) "Заблокировано интенсивным режимом энергосбережения"
+                    else "12 полос · режим: ${eqModeLabel(vm.eqMode)}",
+                )
+            },
         )
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
@@ -2095,7 +2122,7 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
         modifier = Modifier.clickable(enabled = enabled) { onChange(!checked) },
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onChange, enabled = enabled) },
+        trailingContent = { AppSwitch(checked = checked, onCheckedChange = onChange, enabled = enabled) },
     )
 }
 
@@ -2201,7 +2228,7 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
                     )
                 },
                 trailingContent = {
-                    Switch(
+                    AppSwitch(
                         checked = excluded,
                         onCheckedChange = { vm.changeGlobalExcluded(it) },
                         enabled = vm.currentId != null,

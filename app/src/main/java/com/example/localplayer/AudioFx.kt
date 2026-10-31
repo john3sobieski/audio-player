@@ -119,7 +119,7 @@ object AudioFx {
     var speedLevel = 0f // положение ползунка, см. SPEED_MIN
 
     /** Скорость, с которой плеер играет прямо сейчас (1x, если эффект выключен). */
-    fun effectiveSpeed(): Float = if (speedEnabled) speedFromPos(speedLevel) else 1f
+    fun effectiveSpeed(): Float = if (speedEnabled && !PowerSave.intensiveNow) speedFromPos(speedLevel) else 1f
 
     var globalGains: FloatArray = ZERO
         private set

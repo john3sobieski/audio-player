@@ -203,6 +203,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun changePowerMode(mode: PowerMode) {
         PowerSave.set(getApplication<Application>(), mode)
         applyCoverCachePolicy()
+        applySpeed() // в интенсивном режиме скорость всегда 1x
     }
 
     // ---------- Настройки звука ----------

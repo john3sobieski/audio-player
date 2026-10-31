@@ -1,6 +1,8 @@
 package com.example.localplayer
 
 import android.content.Context
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -29,7 +31,7 @@ enum class PowerMode(val label: String, val description: String) {
             "• всегда тёмная тема\n" +
             "• громкость плеера не выше 40%\n" +
             "• только моно\n" +
-            "• эквалайзер, басы, требл, subsonic и нормализация отключены\n" +
+            "• скорость, эквалайзер, басы, требл, subsonic и нормализация заблокированы\n" +
             "• звук только через провод или динамик телефона, без Bluetooth\n" +
             "• папка сканируется только по кнопке\n" +
             "• меньше кэша обложек и заранее собранных страниц",
@@ -129,6 +131,12 @@ object PowerSave {
 // Вместо tween/spring во всём интерфейсе используются mtween/mspring: в среднем и интенсивном режиме они
 // возвращают мгновенный переход (snap), то есть состояние меняется сразу, без покадровой анимации.
 // ---------------------------------------------------------------------
+
+fun calmEnter(normal: EnterTransition): EnterTransition =
+    if (PowerSave.reduceMotion) EnterTransition.None else normal
+
+fun calmExit(normal: ExitTransition): ExitTransition =
+    if (PowerSave.reduceMotion) ExitTransition.None else normal
 
 /** Длительность короткого проявления, которое остаётся при переходах между экранами в режимах энергосбережения. */
 const val QUICK_FADE_MS = 90
