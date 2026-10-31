@@ -100,6 +100,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.BatteryAlert
@@ -193,6 +194,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -344,7 +346,7 @@ fun App(vm: PlayerViewModel) {
     }
     if (vm.newPlaylistDialog) {
         NameDialog(
-            title = "Новый плейлист",
+            title = stringResource(R.string.new_playlist),
             initial = "",
             onConfirm = { vm.createPlaylist(it, vm.newPlaylistFirstTrack); vm.newPlaylistDialog = false; vm.newPlaylistFirstTrack = null },
             onDismiss = { vm.newPlaylistDialog = false; vm.newPlaylistFirstTrack = null },
@@ -352,7 +354,7 @@ fun App(vm: PlayerViewModel) {
     }
     vm.renameTarget?.let { p ->
         NameDialog(
-            title = "Переименовать плейлист",
+            title = stringResource(R.string.rename_playlist),
             initial = p.name,
             onConfirm = { vm.renamePlaylist(p.id, it); vm.renameTarget = null },
             onDismiss = { vm.renameTarget = null },
@@ -364,12 +366,12 @@ fun App(vm: PlayerViewModel) {
 @Composable
 private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
     val title = when (screen) {
-        null -> "Моя музыка"
-        Screen.Settings -> "Настройки"
-        Screen.Equalizer -> "Эквалайзер"
+        null -> stringResource(R.string.title_my_music)
+        Screen.Settings -> stringResource(R.string.title_settings)
+        Screen.Equalizer -> stringResource(R.string.title_equalizer)
         Screen.Player, Screen.PlayerEqualizer, Screen.Lyrics -> "" // у экранов плеера собственная шапка, сюда они не попадают
-        is Screen.AlbumScreen -> vm.albums.find { it.key == screen.key }?.name ?: ""
-        is Screen.PlaylistScreen -> vm.playlists.find { it.id == screen.id }?.name ?: ""
+        is Screen.AlbumScreen -> vm.albums.find { it.key == screen.key }?.let { albumText(it.name) } ?: ""
+        is Screen.PlaylistScreen -> vm.playlists.find { it.id == screen.id }?.let { it.label() } ?: ""
     }
     val searching = vm.searchOpen && screen == null
     // 0 -> 1: заголовок уезжает влево и гаснет, на его месте раскрывается поле поиска
@@ -415,7 +417,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
                 exit = calmExit(shrinkOut() + fadeOut()),
             ) {
                 IconButton(onClick = { vm.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                 }
             }
         },
@@ -430,7 +432,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
                     Crossfade(targetState = searching, animationSpec = mtween(300), label = "searchIcon") { isOpen ->
                         Icon(
                             if (isOpen) Icons.Default.Close else Icons.Default.Search,
-                            contentDescription = if (isOpen) "Закрыть поиск" else "Поиск",
+                            contentDescription = stringResource(if (isOpen) R.string.cd_close_search else R.string.cd_search),
                         )
                     }
                 }
@@ -441,7 +443,7 @@ private fun TopBar(vm: PlayerViewModel, screen: Screen?) {
                 exit = calmExit(shrinkHorizontally() + fadeOut()),
             ) {
                 IconButton(onClick = { vm.push(Screen.Settings) }) {
-                    Icon(Icons.Default.Settings, contentDescription = "Настройки")
+                    Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.title_settings))
                 }
             }
         },
@@ -466,10 +468,10 @@ private fun SearchField(vm: PlayerViewModel) {
         placeholder = {
             Text(
                 when (vm.tab) {
-                    0 -> "Поиск плейлистов"
-                    1 -> "Поиск альбомов"
-                    2 -> "Поиск в очереди"
-                    else -> "Поиск треков"
+                    0 -> stringResource(R.string.search_playlists)
+                    1 -> stringResource(R.string.search_albums)
+                    2 -> stringResource(R.string.search_queue)
+                    else -> stringResource(R.string.search_tracks)
                 },
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
@@ -491,10 +493,10 @@ private fun SearchField(vm: PlayerViewModel) {
 private fun LibraryNavBar(vm: PlayerViewModel) {
     val cs = MaterialTheme.colorScheme
     val items = listOf(
-        "Плейлисты" to Icons.AutoMirrored.Filled.PlaylistPlay,
-        "Альбомы" to Icons.Default.Album,
-        "Очереди" to Icons.AutoMirrored.Filled.QueueMusic,
-        "Треки" to Icons.Default.LibraryMusic,
+        stringResource(R.string.tab_playlists) to Icons.AutoMirrored.Filled.PlaylistPlay,
+        stringResource(R.string.tab_albums) to Icons.Default.Album,
+        stringResource(R.string.tab_queues) to Icons.AutoMirrored.Filled.QueueMusic,
+        stringResource(R.string.tab_tracks) to Icons.Default.LibraryMusic,
     )
     Surface(color = cs.surfaceContainer) {
         BoxWithConstraints(Modifier.navigationBarsPadding().fillMaxWidth().height(80.dp)) {
@@ -558,7 +560,7 @@ private fun LibraryScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             if (PowerSave.reduceMotion) {
                 // Бесконечная анимация индикатора будит экран на каждом кадре: вместо неё статичная подпись
                 Text(
-                    "Сканирую папку…",
+                    stringResource(R.string.scanning_folder),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -628,15 +630,15 @@ private fun EmptyFolderState(pickFolder: () -> Unit) {
     ) {
         Icon(Icons.Default.FolderOpen, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(16.dp))
-        Text("Выберите папку с музыкой", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.choose_folder_title), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Плеер будет видеть только файлы из этой папки (и вложенных).",
+            stringResource(R.string.choose_folder_hint),
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(24.dp))
-        Button(onClick = pickFolder) { Text("Выбрать папку") }
+        Button(onClick = pickFolder) { Text(stringResource(R.string.choose_folder)) }
     }
 }
 
@@ -658,7 +660,7 @@ private fun <T> MutableList<T>.moveByKey(from: Any, to: Any, key: (T) -> Any) {
 @Composable
 private fun TracksTab(vm: PlayerViewModel) {
     if (vm.tracks.isEmpty()) {
-        EmptyHint(if (vm.scanning) "Сканирую папку…" else "В выбранной папке нет аудиофайлов")
+        EmptyHint(if (vm.scanning) stringResource(R.string.scanning_folder) else stringResource(R.string.no_audio_in_folder))
         return
     }
     val query = vm.activeQuery
@@ -680,7 +682,7 @@ private fun TracksTab(vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         SortBar(vm.trackSort, TRACK_SORT_KEYS, { vm.changeTrackSort(it); scope.launch { listState.scrollToItem(0) } })
-        if (list.isEmpty()) EmptyHint("Ничего не найдено") else
+        if (list.isEmpty()) EmptyHint(stringResource(R.string.nothing_found)) else
         FastScrollContainer(listState) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(list, key = { _, t -> t.uri }) { i, t ->
@@ -690,8 +692,8 @@ private fun TracksTab(vm: PlayerViewModel) {
                     number = i + 1,
                     onClick = { vm.play(list, i) },
                     menu = listOf(
-                        "Добавить в плейлист" to { vm.trackForPlaylist = t },
-                        "Добавить в очередь" to { vm.trackForQueue = t },
+                        MenuKind.ADD_TO_PLAYLIST to { vm.trackForPlaylist = t },
+                        MenuKind.ADD_TO_QUEUE to { vm.trackForQueue = t },
                     ),
                     modifier = reorderableItem(reorder, t.uri),
                 )
@@ -704,7 +706,7 @@ private fun TracksTab(vm: PlayerViewModel) {
 @Composable
 private fun AlbumsTab(vm: PlayerViewModel) {
     if (vm.albums.isEmpty()) {
-        EmptyHint(if (vm.scanning) "Сканирую папку…" else "Альбомов пока нет")
+        EmptyHint(if (vm.scanning) stringResource(R.string.scanning_folder) else stringResource(R.string.no_albums_yet))
         return
     }
     val query = vm.activeQuery
@@ -727,7 +729,7 @@ private fun AlbumsTab(vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         SortBar(vm.albumSort, ALBUM_SORT_KEYS, { vm.changeAlbumSort(it); scope.launch { listState.scrollToItem(0) } })
-        if (list.isEmpty()) EmptyHint("Ничего не найдено") else
+        if (list.isEmpty()) EmptyHint(stringResource(R.string.nothing_found)) else
         FastScrollContainer(listState) {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(list, key = { _, a -> a.key }) { _, a ->
@@ -735,9 +737,9 @@ private fun AlbumsTab(vm: PlayerViewModel) {
                     modifier = reorderableItem(reorder, a.key).pressableRow({ vm.push(Screen.AlbumScreen(a.key)) }),
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Cover(a.tracks.firstOrNull()?.uri, 56.dp) },
-                    headlineContent = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    headlineContent = { Text(albumText(a.name), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = {
-                        Text("${a.artist} · ${a.tracks.size} ${plural(a.tracks.size)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${artistText(a.artist)} · ${tracksCount(a.tracks.size)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     },
                 )
             }
@@ -750,7 +752,10 @@ private fun AlbumsTab(vm: PlayerViewModel) {
 private fun PlaylistsTab(vm: PlayerViewModel) {
     val query = vm.activeQuery
     val all = vm.sortedPlaylists
-    val sorted = remember(all, query) { if (query.isEmpty()) all else all.filter { it.matches(query) } }
+    val favoritesName = stringResource(R.string.favorites_name)
+    val sorted = remember(all, query, favoritesName) {
+        if (query.isEmpty()) all else all.filter { it.matches(query, if (it.id == FAVORITES_ID) favoritesName else it.name) }
+    }
     val working = remember { mutableStateListOf<Playlist>() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -776,14 +781,14 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
                     modifier = Modifier.pressableRow({ vm.newPlaylistFirstTrack = null; vm.newPlaylistDialog = true }),
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary) },
-                    headlineContent = { Text("Новый плейлист", color = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.new_playlist), color = MaterialTheme.colorScheme.primary) },
                 )
                 HorizontalDivider()
             }
             if (vm.playlists.isEmpty()) {
-                item { Text("Плейлистов пока нет", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { Text(stringResource(R.string.no_playlists_yet), Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else if (list.isEmpty()) {
-                item { Text("Ничего не найдено", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { Text(stringResource(R.string.nothing_found), Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             itemsIndexed(list, key = { _, p -> p.id }) { _, p ->
                 val n = vm.playlistTracks(p).size
@@ -794,15 +799,15 @@ private fun PlaylistsTab(vm: PlayerViewModel) {
                         if (p.id == FAVORITES_ID) Icon(Icons.Default.Favorite, null, tint = MaterialTheme.colorScheme.primary)
                         else Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null)
                     },
-                    headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = { Text("$n ${plural(n)}") },
+                    headlineContent = { Text(p.label(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = { Text(tracksCount(n)) },
                     trailingContent = {
                         // Плейлист по умолчанию нельзя переименовать или удалить
                         if (p.id != FAVORITES_ID) {
                             RowMenu(
                                 listOf(
-                                    "Переименовать" to { vm.renameTarget = p },
-                                    "Удалить" to { vm.deletePlaylist(p.id) },
+                                    MenuKind.RENAME to { vm.renameTarget = p },
+                                    MenuKind.DELETE to { vm.deletePlaylist(p.id) },
                                 ),
                             )
                         }
@@ -858,16 +863,16 @@ private fun QueueList(vm: PlayerViewModel, queueId: Int) {
     val searching = query.isNotEmpty()
     TrackListScreen(
         vm = vm,
-        header = "${queue.name} · ${all.size} ${plural(all.size)}",
+        header = "${queue.label()} · ${tracksCount(all.size)}",
         list = shown,
-        emptyText = if (searching) "Ничего не найдено" else "${queue.name} пуста. Добавляйте треки через меню «⋮» в списках или кнопкой очередей в плеере.",
+        emptyText = if (searching) stringResource(R.string.nothing_found) else stringResource(R.string.queue_empty, queue.label()),
         menuFor = { t ->
             val i = shown.indexOfFirst { it.uri == t.uri }
             buildList {
                 // Во время поиска порядок не меняем (как и при перетаскивании)
-                if (!searching && i > 0) add("Переместить вверх" to { vm.moveInQueue(queue.id, t, -1) })
-                if (!searching && i in 0 until shown.lastIndex) add("Переместить вниз" to { vm.moveInQueue(queue.id, t, 1) })
-                add("Убрать из очереди" to { vm.removeFromQueue(queue.id, t) })
+                if (!searching && i > 0) add(MenuKind.MOVE_UP to { vm.moveInQueue(queue.id, t, -1) })
+                if (!searching && i in 0 until shown.lastIndex) add(MenuKind.MOVE_DOWN to { vm.moveInQueue(queue.id, t, 1) })
+                add(MenuKind.REMOVE_FROM_QUEUE to { vm.removeFromQueue(queue.id, t) })
             }
         },
         sourceKey = "queue:${queue.id}",
@@ -917,7 +922,7 @@ private fun QueueSwitcher(vm: PlayerViewModel) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            q.name,
+                            q.label(),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                             color = textColor,
@@ -938,17 +943,17 @@ private fun QueueSwitcher(vm: PlayerViewModel) {
 @Composable
 private fun AlbumScreen(vm: PlayerViewModel, key: String) {
     val album = vm.albums.find { it.key == key }
-    if (album == null) { EmptyHint("Альбом не найден"); return }
+    if (album == null) { EmptyHint(stringResource(R.string.album_not_found)); return }
     TrackListScreen(
         vm = vm,
-        header = "${album.artist} · ${album.tracks.size} ${plural(album.tracks.size)}",
+        header = "${artistText(album.artist)} · ${tracksCount(album.tracks.size)}",
         list = album.tracks,
         showCovers = false, // внутри альбома обложка у всех треков одна: показываем её один раз сверху
         coverUri = album.tracks.firstOrNull()?.uri,
         menuFor = { t ->
             listOf(
-                "Добавить в плейлист" to { vm.trackForPlaylist = t },
-                "Добавить в очередь" to { vm.trackForQueue = t },
+                MenuKind.ADD_TO_PLAYLIST to { vm.trackForPlaylist = t },
+                MenuKind.ADD_TO_QUEUE to { vm.trackForQueue = t },
             )
         },
         sourceKey = "album:$key",
@@ -958,17 +963,17 @@ private fun AlbumScreen(vm: PlayerViewModel, key: String) {
 @Composable
 private fun PlaylistScreen(vm: PlayerViewModel, id: String) {
     val pl = vm.playlists.find { it.id == id }
-    if (pl == null) { EmptyHint("Плейлист не найден"); return }
+    if (pl == null) { EmptyHint(stringResource(R.string.playlist_not_found)); return }
     val list = vm.playlistTracks(pl).distinctBy { it.uri }
     TrackListScreen(
         vm = vm,
-        header = "${list.size} ${plural(list.size)}",
+        header = tracksCount(list.size),
         list = list,
-        emptyText = "Плейлист пуст. Добавляйте треки через меню «⋮» на вкладках «Треки» и «Альбомы».",
+        emptyText = stringResource(R.string.playlist_empty),
         menuFor = { t ->
             listOf(
-                "Добавить в очередь" to { vm.trackForQueue = t },
-                "Убрать из плейлиста" to { vm.removeFromPlaylist(pl.id, t) },
+                MenuKind.ADD_TO_QUEUE to { vm.trackForQueue = t },
+                MenuKind.REMOVE_FROM_PLAYLIST to { vm.removeFromPlaylist(pl.id, t) },
             )
         },
         sourceKey = "playlist:$id",
@@ -981,11 +986,11 @@ private fun TrackListScreen(
     vm: PlayerViewModel,
     header: String,
     list: List<Track>,
-    emptyText: String = "Нет треков",
+    emptyText: String = stringResource(R.string.no_tracks),
     showCovers: Boolean = true,
     /** Если задан, над заголовком показывается большая обложка (экран альбома). */
     coverUri: String? = null,
-    menuFor: (Track) -> List<Pair<String, () -> Unit>>,
+    menuFor: (Track) -> List<Pair<MenuKind, () -> Unit>>,
     /** Ключ списка (альбом/плейлист): по нему кнопка «Играть» узнаёт, что очередь запущена именно отсюда. */
     sourceKey: String,
     /** Если задан, треки можно перетаскивать (долгое нажатие); получает новый порядок URI. */
@@ -1021,13 +1026,13 @@ private fun TrackListScreen(
                     // Пока очередь играет из этого списка, кнопка превращается в «Пауза» и ставит воспроизведение на паузу
                     val listPlaying = vm.playingSource == sourceKey && vm.currentId != null && vm.uiPlaying
                     ActionPill(
-                        if (listPlaying) "Пауза" else "Играть",
+                        stringResource(if (listPlaying) R.string.pause else R.string.play),
                         if (listPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         primary = true, enabled = list.isNotEmpty(),
                         onClick = { vm.toggleList(list, sourceKey) },
                     )
                     ActionPill(
-                        "Вперемешку", Icons.Default.Shuffle, primary = false, enabled = list.isNotEmpty(),
+                        stringResource(R.string.shuffle_list), Icons.Default.Shuffle, primary = false, enabled = list.isNotEmpty(),
                         onClick = { vm.playShuffled(list, sourceKey) }, spin = true,
                     )
                 }
@@ -1062,7 +1067,7 @@ private fun TrackRow(
     current: Boolean,
     number: Int,
     onClick: () -> Unit,
-    menu: List<Pair<String, () -> Unit>>,
+    menu: List<Pair<MenuKind, () -> Unit>>,
     modifier: Modifier = Modifier,
     showCover: Boolean = true,
 ) {
@@ -1078,7 +1083,7 @@ private fun TrackRow(
                 // Порядковый номер (до 4–5 цифр влезает без переноса); у играющего трека вместо него треугольник
                 Box(Modifier.width(TRACK_NUMBER_WIDTH), contentAlignment = Alignment.Center) {
                     if (current) {
-                        Icon(Icons.Default.PlayArrow, "Сейчас играет", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.PlayArrow, stringResource(R.string.now_playing), Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
                     } else {
                         Text(
                             number.toString(),
@@ -1096,7 +1101,7 @@ private fun TrackRow(
             }
         },
         headlineContent = { Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = color) },
-        supportingContent = { Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text(artistText(track.artist), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (track.durationMs > 0) Text(formatTime(track.durationMs), style = MaterialTheme.typography.bodySmall)
@@ -1107,7 +1112,7 @@ private fun TrackRow(
 }
 
 @Composable
-private fun RowMenu(items: List<Pair<String, () -> Unit>>) = AppMenu(items)
+private fun RowMenu(items: List<Pair<MenuKind, () -> Unit>>) = AppMenu(items)
 
 /** Размер обложки в списках треков (меньше, чем 56 dp в «Альбомах»). */
 private val TRACK_COVER_SIZE = 44.dp
@@ -1189,7 +1194,7 @@ private fun AddToPlaylistDialog(vm: PlayerViewModel, track: Track) {
         ) {
             Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.75f).dp)) {
                 Text(
-                    "Добавить в плейлист",
+                    stringResource(R.string.menu_add_to_playlist),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
                 )
@@ -1209,10 +1214,10 @@ private fun AddToPlaylistDialog(vm: PlayerViewModel, track: Track) {
                     }) {
                         Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Новый плейлист")
+                        Text(stringResource(R.string.new_playlist))
                     }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = close) { Text("Готово") }
+                    TextButton(onClick = close) { Text(stringResource(R.string.done)) }
                 }
             }
         }
@@ -1232,15 +1237,15 @@ private fun PlaylistPickRow(vm: PlayerViewModel, p: Playlist, track: Track, favo
         if (favorite) Icon(Icons.Default.Favorite, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
         else Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(p.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(p.label(), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "$n ${plural(n)}",
+                tracksCount(n),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Box(Modifier.size(20.dp)) {
-            if (contains) Icon(Icons.Default.Check, "В плейлисте", tint = MaterialTheme.colorScheme.primary)
+            if (contains) Icon(Icons.Default.Check, stringResource(R.string.cd_in_playlist), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -1261,7 +1266,7 @@ private fun AddToQueueDialog(vm: PlayerViewModel, track: Track) {
         ) {
             Column {
                 Text(
-                    "Добавить в очередь",
+                    stringResource(R.string.menu_add_to_queue),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
                 )
@@ -1269,7 +1274,7 @@ private fun AddToQueueDialog(vm: PlayerViewModel, track: Track) {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = close) { Text("Готово") }
+                    TextButton(onClick = close) { Text(stringResource(R.string.done)) }
                 }
             }
         }
@@ -1291,15 +1296,15 @@ private fun QueuePickRow(vm: PlayerViewModel, q: PlayQueue, track: Track) {
             tint = if (contains) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
-            Text(q.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(q.label(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "$n ${plural(n)}",
+                tracksCount(n),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Box(Modifier.size(24.dp)) {
-            if (contains) Icon(Icons.Default.Check, "В очереди", tint = MaterialTheme.colorScheme.primary)
+            if (contains) Icon(Icons.Default.Check, stringResource(R.string.cd_in_queue), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -1310,9 +1315,9 @@ private fun NameDialog(title: String, initial: String, onConfirm: (String) -> Un
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Название") }) },
+        text = { OutlinedTextField(text, { text = it }, singleLine = true, label = { Text(stringResource(R.string.name_label)) }) },
         confirmButton = { TextButton(onClick = { onConfirm(text) }, enabled = text.isNotBlank()) { Text("OK") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -1333,11 +1338,11 @@ private fun MiniPlayer(vm: PlayerViewModel, onClick: () -> Unit = { vm.openPlaye
                 Cover(t?.uri, 44.dp, decodeSize = PLAYER_COVER_SIZE)
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text(t?.title ?: "…", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                    Text(t?.artist ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                    Text(artistText(t?.artist.orEmpty()), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                 }
                 PlayPauseButton(vm.uiPlaying, { vm.togglePlay() }, buttonSize = 40.dp, iconSize = 20.dp)
                 Spacer(Modifier.width(4.dp))
-                SkipButton(Icons.Default.SkipNext, "Следующий", 1, { vm.next() }, boxSize = 44.dp, iconSize = 26.dp)
+                SkipButton(Icons.Default.SkipNext, stringResource(R.string.next), 1, { vm.next() }, boxSize = 44.dp, iconSize = 26.dp)
             }
         }
     }
@@ -1354,10 +1359,10 @@ private fun PlayerScreen(vm: PlayerViewModel) {
         ) {
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.pop() }) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Свернуть")
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.cd_collapse))
                 }
                 Text(
-                    "Сейчас играет",
+                    stringResource(R.string.now_playing),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = 8.dp),
                 )
@@ -1401,7 +1406,7 @@ private fun PlayerScreen(vm: PlayerViewModel) {
                                     maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                                 )
                                 Text(
-                                    tr?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
+                                    artistText(tr?.artist.orEmpty()), style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -1437,7 +1442,7 @@ private fun QueueButton(inQueue: Boolean, enabled: Boolean, onClick: () -> Unit)
     ) {
         Icon(
             Icons.AutoMirrored.Filled.QueueMusic,
-            contentDescription = if (inQueue) "Изменить очереди трека" else "Добавить в очередь",
+            contentDescription = stringResource(if (inQueue) R.string.cd_edit_queues else R.string.menu_add_to_queue),
             tint = tint,
         )
     }
@@ -1465,7 +1470,7 @@ private fun TrackInfoButton(enabled: Boolean, onClick: () -> Unit) {
 private fun SaveToPlaylistButton(saved: Boolean, trackKey: Any?, enabled: Boolean, onClick: () -> Unit) {
     AnimatedHeart(
         saved = saved, trackKey = trackKey, enabled = enabled,
-        description = if (saved) "Изменить плейлисты трека" else "Добавить в плейлист",
+        description = stringResource(if (saved) R.string.cd_edit_playlists else R.string.menu_add_to_playlist),
         onClick = onClick,
     )
 }
@@ -1480,7 +1485,7 @@ private fun TrackInfoDialog(vm: PlayerViewModel, track: Track, onDismiss: () -> 
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("О треке") },
+        title = { Text(stringResource(R.string.track_info_title)) },
         text = {
             val list = sections
             if (list == null) {
@@ -1507,7 +1512,7 @@ private fun TrackInfoDialog(vm: PlayerViewModel, track: Track, onDismiss: () -> 
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 
@@ -1563,7 +1568,7 @@ private fun SoundPanel(vm: PlayerViewModel) {
     dialog?.let { d ->
         AlertDialog(
             onDismissRequest = { dialog = null },
-            confirmButton = { TextButton(onClick = { dialog = null }) { Text("Готово") } },
+            confirmButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.done)) } },
             text = {
                 when (d) {
                     0 -> BassControl(vm)
@@ -1628,9 +1633,9 @@ private fun FxControl(
                 Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(
                     when {
-                        locked -> "Заблокировано интенсивным режимом энергосбережения"
+                        locked -> stringResource(R.string.locked_by_intensive)
                         enabled -> valueText
-                        else -> "Выключено"
+                        else -> stringResource(R.string.fx_off)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1652,9 +1657,9 @@ private fun FxControl(
 /** Усиление басов: переключатель и ползунок 0...+15 дБ. Работает независимо от эквалайзера. */
 @Composable
 private fun BassControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = FxControl(
-    title = "Усиление басов",
+    title = stringResource(R.string.bass_title),
     enabled = vm.bassEnabled,
-    valueText = "+${vm.bassDb.roundToInt()} дБ",
+    valueText = stringResource(R.string.fmt_plus_db, vm.bassDb.roundToInt()),
     value = vm.bassDb,
     range = 0f..AudioFx.BASS_MAX_DB,
     steps = AudioFx.BASS_MAX_DB.toInt() - 1,
@@ -1667,9 +1672,9 @@ private fun BassControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = Fx
 /** Усиление требла (высоких частот): переключатель и ползунок 0...+15 дБ. */
 @Composable
 private fun TrebleControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = FxControl(
-    title = "Усиление требла",
+    title = stringResource(R.string.treble_title),
     enabled = vm.trebleEnabled,
-    valueText = "+${vm.trebleDb.roundToInt()} дБ",
+    valueText = stringResource(R.string.fmt_plus_db, vm.trebleDb.roundToInt()),
     value = vm.trebleDb,
     range = 0f..AudioFx.TREBLE_MAX_DB,
     steps = AudioFx.TREBLE_MAX_DB.toInt() - 1,
@@ -1687,13 +1692,13 @@ private fun TrebleControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = 
 private fun SpeedControl(vm: PlayerViewModel, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth()) {
         FxControl(
-            title = "Скорость воспроизведения",
+            title = stringResource(R.string.speed_title),
             enabled = vm.speedEnabled,
             valueText = speedLabel(vm.speedValue) +
                 when {
-                    vm.speedValue > 0f -> " · быстрее"
-                    vm.speedValue < 0f -> " · медленнее"
-                    else -> " · обычная"
+                    vm.speedValue > 0f -> " · " + stringResource(R.string.speed_faster_word)
+                    vm.speedValue < 0f -> " · " + stringResource(R.string.speed_slower_word)
+                    else -> " · " + stringResource(R.string.speed_normal_word)
                 },
             value = vm.speedValue,
             range = AudioFx.SPEED_MIN..AudioFx.SPEED_MAX,
@@ -1706,7 +1711,7 @@ private fun SpeedControl(vm: PlayerViewModel, modifier: Modifier = Modifier) {
             TextButton(
                 onClick = { vm.changeSpeedValue(vm.speedValue - 0.1f); vm.commitSound() },
                 enabled = !PowerSave.intensive && vm.speedEnabled && vm.speedValue > AudioFx.SPEED_MIN + 0.05f,
-            ) { Text("Медленнее") }
+            ) { Text(stringResource(R.string.speed_slower)) }
             TextButton(
                 onClick = { vm.changeSpeedValue(0f); vm.commitSound() },
                 enabled = !PowerSave.intensive && vm.speedEnabled && vm.speedValue != 0f,
@@ -1714,7 +1719,7 @@ private fun SpeedControl(vm: PlayerViewModel, modifier: Modifier = Modifier) {
             TextButton(
                 onClick = { vm.changeSpeedValue(vm.speedValue + 0.1f); vm.commitSound() },
                 enabled = !PowerSave.intensive && vm.speedEnabled && vm.speedValue < AudioFx.SPEED_MAX - 0.05f,
-            ) { Text("Быстрее") }
+            ) { Text(stringResource(R.string.speed_faster)) }
         }
     }
 }
@@ -1729,7 +1734,7 @@ private fun speedLabel(pos: Float): String {
 /** Subsonic-фильтр (срез инфранизких частот): переключатель и ползунок интенсивности 0...100 %. */
 @Composable
 private fun SubsonicControl(vm: PlayerViewModel, modifier: Modifier = Modifier) = FxControl(
-    title = "Subsonic-фильтр",
+    title = stringResource(R.string.subsonic_title),
     enabled = vm.subEnabled,
     valueText = "${vm.subLevel.roundToInt()} %",
     value = vm.subLevel,
@@ -1741,11 +1746,14 @@ private fun SubsonicControl(vm: PlayerViewModel, modifier: Modifier = Modifier) 
     modifier = modifier,
 )
 
-private fun eqModeLabel(mode: EqMode): String = when (mode) {
-    EqMode.OFF -> "выключен"
-    EqMode.GLOBAL -> "для всех треков"
-    EqMode.PER_TRACK -> "для каждого трека"
-}
+@Composable
+private fun eqModeLabel(mode: EqMode): String = stringResource(
+    when (mode) {
+        EqMode.OFF -> R.string.eqmode_off
+        EqMode.GLOBAL -> R.string.eqmode_global
+        EqMode.PER_TRACK -> R.string.eqmode_per_track
+    },
+)
 
 /**
  * Полоса прогресса. Позиция читается на каждом кадре, но рисуется прямо в фазе отрисовки (drawBehind):
@@ -1836,11 +1844,11 @@ private fun SeekBar(vm: PlayerViewModel, durationMs: Long) {
 private fun PlayerControls(vm: PlayerViewModel) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         ToggleIconButton(active = vm.shuffle, stateKey = vm.shuffle, onClick = { vm.toggleShuffle() }) { tint ->
-            Icon(Icons.Default.Shuffle, "Перемешать", tint = tint)
+            Icon(Icons.Default.Shuffle, stringResource(R.string.cd_shuffle), tint = tint)
         }
-        SkipButton(Icons.Default.SkipPrevious, "Предыдущий", -1, { vm.prev() })
+        SkipButton(Icons.Default.SkipPrevious, stringResource(R.string.previous), -1, { vm.prev() })
         PlayPauseButton(vm.uiPlaying, { vm.togglePlay() }, buttonSize = 72.dp, iconSize = 34.dp)
-        SkipButton(Icons.Default.SkipNext, "Следующий", 1, { vm.next() })
+        SkipButton(Icons.Default.SkipNext, stringResource(R.string.next), 1, { vm.next() })
         ToggleIconButton(active = vm.repeat != Player.REPEAT_MODE_OFF, stateKey = vm.repeat, onClick = { vm.cycleRepeat() }) { tint ->
             AnimatedContent(
                 targetState = vm.repeat == Player.REPEAT_MODE_ONE,
@@ -1850,7 +1858,7 @@ private fun PlayerControls(vm: PlayerViewModel) {
                 },
                 label = "repeatIcon",
             ) { one ->
-                Icon(if (one) Icons.Default.RepeatOne else Icons.Default.Repeat, "Повтор", tint = tint)
+                Icon(if (one) Icons.Default.RepeatOne else Icons.Default.Repeat, stringResource(R.string.cd_repeat), tint = tint)
             }
         }
     }
@@ -1865,17 +1873,17 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         // ----- Папка -----
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Папка с музыкой", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.music_folder), style = MaterialTheme.typography.titleMedium)
             Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        vm.folder?.let { folderLabel(it) } ?: "Не выбрана",
+                        vm.folder?.let { folderLabel(it) } ?: stringResource(R.string.folder_not_selected),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     if (vm.folder != null) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            if (vm.scanning) "Сканирую…" else "Найдено треков: ${vm.tracks.size}",
+                            if (vm.scanning) stringResource(R.string.scanning) else stringResource(R.string.tracks_found, vm.tracks.size),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1883,7 +1891,7 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
                 }
             }
             Button(onClick = pickFolder, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Выбрать папку")
+                Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.choose_folder))
             }
             // Одна кнопка. В интенсивном режиме это единственный способ обновить список (быстрое сканирование),
             // в остальных режимах — полное пересканирование, как и раньше.
@@ -1893,14 +1901,10 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp))
-                Text(if (PowerSave.intensive) "Сканировать папку" else "Пересканировать папку")
+                Text(stringResource(if (PowerSave.intensive) R.string.scan_folder else R.string.rescan_folder))
             }
             Text(
-                if (PowerSave.intensive) {
-                    "Интенсивный режим: автоматического сканирования нет. Новые и удалённые файлы подхватываются только по кнопке «Сканировать папку»."
-                } else {
-                    "Плеер читает только выбранную папку и её подпапки и обновляет список при каждом входе в приложение."
-                },
+                stringResource(if (PowerSave.intensive) R.string.scan_hint_intensive else R.string.scan_hint_normal),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1910,14 +1914,14 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
 
         // ----- Тема -----
         Text(
-            "Тема",
+            stringResource(R.string.theme),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
         )
         val themeModes = ThemeMode.entries
         val themeLocked = PowerSave.intensive
         SlidingSelector(
-            labels = themeModes.map { it.label },
+            labels = themeModes.map { stringResource(it.label) },
             icons = listOf(Icons.Default.LightMode, Icons.Default.DarkMode, Icons.Default.SettingsBrightness),
             selected = themeModes.indexOf(if (themeLocked) ThemeMode.DARK else vm.themeMode),
             onSelect = { vm.changeTheme(themeModes[it]) },
@@ -1925,33 +1929,32 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             enabled = !themeLocked,
         )
         SelectorCaption(
-            if (themeLocked) "Интенсивный режим: всегда чёрная тема. Выбранная раньше вернётся при выходе из режима"
-            else vm.themeMode.description,
+            stringResource(if (themeLocked) R.string.theme_locked_caption else vm.themeMode.description),
         )
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
 
         // ----- Энергоэффективность -----
         Text(
-            "Энергоэффективность",
+            stringResource(R.string.power_title),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
         )
         val powerModes = PowerMode.entries
         SlidingSelector(
-            labels = powerModes.map { it.label },
+            labels = powerModes.map { stringResource(it.label) },
             icons = listOf(Icons.Default.BatteryFull, Icons.Default.BatteryStd, Icons.Default.BatteryAlert),
             selected = powerModes.indexOf(vm.powerMode),
             onSelect = { vm.changePowerMode(powerModes[it]) },
             modifier = Modifier.padding(horizontal = 16.dp),
         )
-        SelectorCaption(vm.powerMode.description)
+        SelectorCaption(stringResource(vm.powerMode.description))
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
 
         // ----- Звук -----
         Text(
-            "Звук",
+            stringResource(R.string.sound_title),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
         )
@@ -1962,8 +1965,7 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             ) {
                 Text(
-                    "Интенсивный режим: громкость плеера не выше 40%, звук только моно, а скорость, эквалайзер, басы, требл, " +
-                        "subsonic и нормализация заблокированы. Их настройки сохранены и вернутся при выходе из режима.",
+                    stringResource(R.string.intensive_sound_notice),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.padding(12.dp),
@@ -1971,20 +1973,19 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
             }
         }
         SwitchRow(
-            title = "Моно",
+            title = stringResource(R.string.mono),
             subtitle = when {
-                PowerSave.intensive -> "Включено интенсивным режимом энергосбережения"
-                vm.monoEnabled -> "Левый и правый каналы объединены"
-                else -> "Стерео: левый и правый каналы раздельно"
+                PowerSave.intensive -> stringResource(R.string.mono_sub_intensive)
+                vm.monoEnabled -> stringResource(R.string.mono_sub_on)
+                else -> stringResource(R.string.mono_sub_off)
             },
             checked = vm.monoEnabled || PowerSave.intensive,
             onChange = { vm.changeMono(it) },
             enabled = !PowerSave.intensive,
         )
         SwitchRow(
-            title = "Нормализация громкости",
-            subtitle = if (PowerSave.intensive) "Заблокировано интенсивным режимом энергосбережения"
-            else "Выравнивает громкость разных треков, чтобы не крутить ползунок вручную",
+            title = stringResource(R.string.normalize),
+            subtitle = stringResource(if (PowerSave.intensive) R.string.locked_by_intensive else R.string.normalize_sub),
             checked = vm.normalizeEnabled && !PowerSave.intensive,
             onChange = { vm.changeNormalize(it) },
             enabled = !PowerSave.intensive,
@@ -1996,27 +1997,53 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
         ListItem(
             modifier = Modifier.clickable(enabled = !PowerSave.intensive) { vm.push(Screen.Equalizer) },
             leadingContent = { Icon(Icons.Default.Equalizer, null) },
-            headlineContent = { Text("Эквалайзер") },
+            headlineContent = { Text(stringResource(R.string.title_equalizer)) },
             supportingContent = {
                 Text(
-                    if (PowerSave.intensive) "Заблокировано интенсивным режимом энергосбережения"
-                    else "12 полос · режим: ${eqModeLabel(vm.eqMode)}",
+                    if (PowerSave.intensive) stringResource(R.string.locked_by_intensive)
+                    else stringResource(R.string.eq_row_sub, eqModeLabel(vm.eqMode)),
                 )
             },
         )
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
 
+        // ----- Язык приложения -----
+        val appCtx = LocalContext.current
+        val currentLanguage = remember { AppLocale.saved(appCtx) }
+        var showLanguage by remember { mutableStateOf(false) }
+        ListItem(
+            modifier = Modifier.clickable { showLanguage = true },
+            leadingContent = { Icon(Icons.Default.Language, null) },
+            headlineContent = { Text(stringResource(R.string.language_title)) },
+            supportingContent = { Text(languageSummary(currentLanguage)) },
+        )
+        if (showLanguage) {
+            LanguageDialog(
+                current = currentLanguage,
+                onSelect = { lang ->
+                    showLanguage = false
+                    if (lang != currentLanguage) {
+                        // Новый язык применяется при пересоздании активности (attachBaseContext); музыка и очередь живут во ViewModel и не прерываются
+                        AppLocale.save(appCtx, lang)
+                        appCtx.findActivity()?.recreate()
+                    }
+                },
+                onDismiss = { showLanguage = false },
+            )
+        }
+        HorizontalDivider()
+
         // ----- Кэш и сброс -----
         var showReset by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { vm.refreshCacheSize() }
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            TwoStepButton("Очистить кэш приложения", "Нажмите ещё раз для подтверждения") {
+            TwoStepButton(stringResource(R.string.clear_cache), stringResource(R.string.clear_cache_confirm)) {
                 vm.clearAppCache()
                 clearCoverMemoryCache()
             }
             Text(
-                "В кэше сейчас: ${formatBytes(vm.cacheBytes)}",
+                stringResource(R.string.cache_now, formatBytes(vm.cacheBytes)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2025,7 +2052,7 @@ private fun SettingsScreen(vm: PlayerViewModel, pickFolder: () -> Unit) {
                 onClick = { showReset = true },
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Сбросить до заводских настроек") }
+            ) { Text(stringResource(R.string.factory_reset)) }
         }
         if (showReset) {
             FactoryResetDialog(
@@ -2070,13 +2097,11 @@ private fun FactoryResetDialog(onConfirm: (clearCache: Boolean) -> Unit, onDismi
     var clearCache by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Сбросить до заводских настроек?") },
+        title = { Text(stringResource(R.string.factory_reset_title)) },
         text = {
             Column {
                 Text(
-                    "Будут сброшены все настройки звука (моно, нормализация, басы, требл, subsonic, скорость), " +
-                        "все эквалайзеры (общий и отдельных треков), сортировки и режим энергоэффективности. " +
-                        "Плейлисты и выбранная папка сохранятся.",
+                    stringResource(R.string.factory_reset_body),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -2086,7 +2111,7 @@ private fun FactoryResetDialog(onConfirm: (clearCache: Boolean) -> Unit, onDismi
                 ) {
                     RadioButton(selected = !clearCache, onClick = null)
                     Spacer(Modifier.width(12.dp))
-                    Text("Только сбросить настройки", Modifier.padding(vertical = 10.dp))
+                    Text(stringResource(R.string.reset_only), Modifier.padding(vertical = 10.dp))
                 }
                 Row(
                     Modifier.fillMaxWidth().clickable { clearCache = true },
@@ -2094,26 +2119,30 @@ private fun FactoryResetDialog(onConfirm: (clearCache: Boolean) -> Unit, onDismi
                 ) {
                     RadioButton(selected = clearCache, onClick = null)
                     Spacer(Modifier.width(12.dp))
-                    Text("Сбросить настройки и очистить весь кэш", Modifier.padding(vertical = 10.dp))
+                    Text(stringResource(R.string.reset_and_clear_cache), Modifier.padding(vertical = 10.dp))
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(clearCache) }) {
-                Text("Сбросить", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.reset_confirm), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
 /** Сбрасывает кэш обложек в памяти (вместе с очисткой дискового кэша). */
 internal fun clearCoverMemoryCache() = coverCache.evictAll()
 
-private fun formatBytes(b: Long): String = when {
-    b < 1024 -> "$b Б"
-    b < 1024 * 1024 -> String.format(java.util.Locale("ru"), "%.0f КБ", b / 1024.0)
-    else -> String.format(java.util.Locale("ru"), "%.1f МБ", b / 1024.0 / 1024.0)
+@Composable
+private fun formatBytes(b: Long): String {
+    val ui = uiLocale()
+    return when {
+        b < 1024 -> stringResource(R.string.fmt_bytes, b)
+        b < 1024 * 1024 -> stringResource(R.string.fmt_kb, String.format(ui, "%.0f", b / 1024.0))
+        else -> stringResource(R.string.fmt_mb, String.format(ui, "%.1f", b / 1024.0 / 1024.0))
+    }
 }
 
 @Composable
@@ -2146,13 +2175,13 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         if (!fromPlayer) {
             Text(
-                "Режим",
+                stringResource(R.string.eq_mode_title),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
             )
             val eqModes = listOf(EqMode.OFF, EqMode.GLOBAL, EqMode.PER_TRACK)
             SlidingSelector(
-                labels = listOf("Выключен", "Для всех", "Для каждого"),
+                labels = listOf(stringResource(R.string.eqsel_off), stringResource(R.string.eqsel_global), stringResource(R.string.eqsel_per_track)),
                 icons = listOf(Icons.Default.PowerSettingsNew, Icons.Default.Equalizer, Icons.Default.MusicNote),
                 selected = eqModes.indexOf(vm.eqMode),
                 onSelect = { vm.changeEqMode(eqModes[it]) },
@@ -2160,9 +2189,9 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
             )
             SelectorCaption(
                 when (vm.eqMode) {
-                    EqMode.OFF -> "Звук без обработки"
-                    EqMode.GLOBAL -> "Одна настройка действует на все треки"
-                    EqMode.PER_TRACK -> "Своя настройка у каждого трека, запоминается навсегда"
+                    EqMode.OFF -> stringResource(R.string.eqdesc_off)
+                    EqMode.GLOBAL -> stringResource(R.string.eqdesc_global)
+                    EqMode.PER_TRACK -> stringResource(R.string.eqdesc_per_track)
                 },
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -2174,25 +2203,24 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
         val note = when (vm.eqMode) {
             EqMode.OFF ->
                 if (fromPlayer) {
-                    "Эквалайзер выключен. Включить его и выбрать режим можно в настройках."
+                    stringResource(R.string.eqnote_off_player)
                 } else {
-                    "Эквалайзер выключен. Выберите режим выше, чтобы настроить звук."
+                    stringResource(R.string.eqnote_off_settings)
                 }
             EqMode.GLOBAL ->
                 if (fromPlayer) {
                     if (vm.currentExcludesGlobal) {
-                        "Для этого трека общая настройка отключена: ползунки меняют только его собственную настройку, она запоминается."
+                        stringResource(R.string.eqnote_excluded)
                     } else {
-                        "Включён режим «для всех треков»: изменения действуют на все треки. Сменить режим можно в настройках."
+                        stringResource(R.string.eqnote_global_player)
                     }
-                } else "Режим «для всех треков»: настройка действует на все треки. Её можно менять и в плеере."
+                } else stringResource(R.string.eqnote_global_settings)
             EqMode.PER_TRACK ->
                 if (fromPlayer) {
-                    vm.currentTrack?.let { "Включён режим «для каждого трека». Настройка относится к треку «${it.title}» и запоминается." }
-                        ?: "Включён режим «для каждого трека». Запустите трек, чтобы настроить его звук."
+                    vm.currentTrack?.let { stringResource(R.string.eqnote_per_track_player_track, it.title) }
+                        ?: stringResource(R.string.eqnote_per_track_player_none)
                 } else {
-                    "Режим «для каждого трека»: здесь настройка заблокирована. Менять звук можно только в плеере, отдельно для каждого трека. " +
-                        "Ниже показана общая настройка: она сохранена, но сейчас не действует."
+                    stringResource(R.string.eqnote_per_track_settings)
                 }
         }
         Surface(
@@ -2214,16 +2242,16 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
             Spacer(Modifier.height(4.dp))
             ListItem(
                 modifier = Modifier.clickable(enabled = vm.currentId != null) { vm.changeGlobalExcluded(!excluded) },
-                headlineContent = { Text("Не применять общий эквалайзер к этому треку") },
+                headlineContent = { Text(stringResource(R.string.eq_exclude_title)) },
                 supportingContent = {
                     Text(
                         when {
                             vm.eqMode == EqMode.PER_TRACK && excluded ->
-                                "Сработает в режиме «для всех треков»: трек будет играть только со своей настройкой"
+                                stringResource(R.string.eq_exclude_sub_pt_excluded)
                             vm.eqMode == EqMode.PER_TRACK ->
-                                "Сейчас режим «для каждого трека»: можно включить заранее для режима «для всех треков»"
-                            excluded -> "Включено: на этот трек не влияет общая настройка"
-                            else -> "Выключено: трек играет с общей настройкой"
+                                stringResource(R.string.eq_exclude_sub_pt)
+                            excluded -> stringResource(R.string.eq_exclude_sub_on)
+                            else -> stringResource(R.string.eq_exclude_sub_off)
                         },
                     )
                 },
@@ -2241,7 +2269,7 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
 
         // Пресеты: работают так же, как ручная настройка (в режиме «для каждого трека» — только в плеере)
         Text(
-            "Пресеты",
+            stringResource(R.string.presets),
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
         )
@@ -2255,7 +2283,7 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
                     selected = selected,
                     onClick = { vm.applyEqPreset(p, fromPlayer) },
                     enabled = editable,
-                    label = { Text(p.name) },
+                    label = { Text(stringResource(p.name)) },
                 )
             }
         }
@@ -2277,12 +2305,12 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
                         onFinish = { vm.commitSound() },
                         modifier = Modifier.fillMaxWidth().height(200.dp),
                     )
-                    Text(AudioFx.BAND_LABELS[i], style = MaterialTheme.typography.labelSmall)
+                    Text(bandLabel(i), style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
         Text(
-            "Гц · диапазон ±12 дБ",
+            stringResource(R.string.eq_axis_caption),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -2295,18 +2323,18 @@ private fun EqualizerScreen(vm: PlayerViewModel, fromPlayer: Boolean) {
             enabled = editable,
             modifier = Modifier.padding(horizontal = 16.dp),
         ) {
-            Text(if (vm.eqMode == EqMode.PER_TRACK) "Сбросить этот трек" else "Сбросить")
+            Text(stringResource(if (vm.eqMode == EqMode.PER_TRACK) R.string.eq_reset_track else R.string.eq_reset))
         }
         if (vm.eqMode == EqMode.PER_TRACK) {
             Text(
-                "Треков с собственной настройкой: ${vm.customTrackCount}",
+                stringResource(R.string.eq_custom_count, vm.customTrackCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
         Text(
-            "Настройки каждого режима хранятся отдельно и не стираются при переключении.",
+            stringResource(R.string.eq_modes_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -2322,10 +2350,10 @@ private fun PlayerEqualizerScreen(vm: PlayerViewModel) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                 }
                 Text(
-                    "Эквалайзер",
+                    stringResource(R.string.title_equalizer),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = 8.dp),
                 )
@@ -2405,6 +2433,15 @@ private fun BandSlider(
     )
 }
 
+/** Подпись полосы эквалайзера: «250», «1k», «3,5k» (десятичный знак и «к»/«k» зависят от языка). */
+@Composable
+private fun bandLabel(i: Int): String {
+    val raw = AudioFx.BAND_LABELS[i]
+    if (i < AudioFx.BAND_KHZ_FROM) return raw
+    val sep = java.text.DecimalFormatSymbols.getInstance(uiLocale()).decimalSeparator
+    return raw.replace('.', sep) + stringResource(R.string.eq_khz_suffix)
+}
+
 private fun formatDb(v: Float): String = when {
     v == 0f -> "0"
     v % 1f == 0f -> "%+d".format(v.toInt())
@@ -2415,25 +2452,15 @@ private fun formatDb(v: Float): String = when {
 // Утилиты
 // =====================================================================
 
+@Composable
 private fun folderLabel(uri: Uri): String {
     val id = android.provider.DocumentsContract.getTreeDocumentId(uri) // "primary:Music/Rock"
     val (volume, path) = id.split(":", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-    val root = if (volume == "primary") "Внутренняя память" else "Карта памяти ($volume)"
+    val root = if (volume == "primary") stringResource(R.string.storage_internal) else stringResource(R.string.storage_sd, volume)
     return if (path.isEmpty()) root else "$root / ${path.replace("/", " / ")}"
 }
 
 private fun formatTime(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(s / 60, s % 60)
-}
-
-private fun plural(n: Int): String {
-    val m10 = n % 10
-    val m100 = n % 100
-    return when {
-        m100 in 11..14 -> "треков"
-        m10 == 1 -> "трек"
-        m10 in 2..4 -> "трека"
-        else -> "треков"
-    }
 }

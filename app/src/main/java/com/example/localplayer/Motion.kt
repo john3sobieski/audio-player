@@ -44,7 +44,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.TransformOrigin
@@ -534,7 +536,7 @@ fun SelectorCaption(text: String) {
  * стандартное меню исчезает почти мгновенно.
  */
 @Composable
-fun AppMenu(items: List<Pair<String, () -> Unit>>) {
+fun AppMenu(items: List<Pair<MenuKind, () -> Unit>>) {
     var open by remember { mutableStateOf(false) }   // логическое состояние меню
     var shown by remember { mutableStateOf(false) }  // окно остаётся в композиции, пока идёт анимация закрытия
     val progress = remember { Animatable(0f) }       // 0 = скрыто, 1 = открыто
@@ -552,7 +554,7 @@ fun AppMenu(items: List<Pair<String, () -> Unit>>) {
     }
     Box {
         PressBox(onClick = { open = true }, modifier = Modifier.size(40.dp), pressedScale = 0.82f) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Меню", tint = cs.onSurfaceVariant)
+            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu), tint = cs.onSurfaceVariant)
         }
         if (shown) {
             val density = LocalDensity.current
@@ -582,8 +584,8 @@ fun AppMenu(items: List<Pair<String, () -> Unit>>) {
                         shadowElevation = 16.dp,
                     ) {
                         Column(Modifier.padding(vertical = 8.dp)) {
-                            items.forEachIndexed { i, (label, action) ->
-                                AppMenuItem(i, label) {
+                            items.forEachIndexed { i, (kind, action) ->
+                                AppMenuItem(i, kind) {
                                     open = false
                                     action()
                                 }
@@ -615,10 +617,10 @@ private class MenuPositionProvider(private val pad: Int, private val margin: Int
 }
 
 @Composable
-private fun AppMenuItem(index: Int, label: String, onClick: () -> Unit) {
+private fun AppMenuItem(index: Int, kind: MenuKind, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val danger = label.startsWith("Удалить") || label.startsWith("Убрать")
-    val color = if (danger) cs.error else cs.onSurface
+    val label = stringResource(kind.label)
+    val color = if (kind.danger) cs.error else cs.onSurface
     val calm = PowerSave.reduceMotion
     val appear = remember { Animatable(if (calm) 1f else 0f) }
     LaunchedEffect(Unit) {
@@ -645,21 +647,25 @@ private fun AppMenuItem(index: Int, label: String, onClick: () -> Unit) {
             .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(menuIcon(label), null, Modifier.size(20.dp), tint = color)
+        Icon(kind.icon, null, Modifier.size(20.dp), tint = color)
         Spacer(Modifier.width(14.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge, color = color)
     }
 }
 
-private fun menuIcon(label: String): ImageVector = when {
-    label.startsWith("Переименовать") -> Icons.Default.Edit
-    label.startsWith("Удалить") -> Icons.Default.Delete
-    label.startsWith("Убрать") -> Icons.Default.RemoveCircleOutline
-    label.startsWith("Добавить в очередь") -> Icons.AutoMirrored.Filled.QueueMusic
-    label.startsWith("Добавить") -> Icons.AutoMirrored.Filled.PlaylistAdd
-    label.startsWith("Переместить вверх") -> Icons.Default.ArrowUpward
-    label.startsWith("Переместить вниз") -> Icons.Default.ArrowDownward
-    else -> Icons.Default.MoreVert
+/**
+ * Пункты меню «⋮». Подпись берётся из ресурсов (поэтому зависит от языка), значок и «опасность» заданы здесь:
+ * раньше они определялись по началу русской подписи, а с переводами так делать нельзя.
+ */
+enum class MenuKind(@StringRes val label: Int, val icon: ImageVector, val danger: Boolean = false) {
+    ADD_TO_PLAYLIST(R.string.menu_add_to_playlist, Icons.AutoMirrored.Filled.PlaylistAdd),
+    ADD_TO_QUEUE(R.string.menu_add_to_queue, Icons.AutoMirrored.Filled.QueueMusic),
+    RENAME(R.string.menu_rename, Icons.Default.Edit),
+    DELETE(R.string.menu_delete, Icons.Default.Delete, danger = true),
+    MOVE_UP(R.string.menu_move_up, Icons.Default.ArrowUpward),
+    MOVE_DOWN(R.string.menu_move_down, Icons.Default.ArrowDownward),
+    REMOVE_FROM_QUEUE(R.string.menu_remove_from_queue, Icons.Default.RemoveCircleOutline, danger = true),
+    REMOVE_FROM_PLAYLIST(R.string.menu_remove_from_playlist, Icons.Default.RemoveCircleOutline, danger = true),
 }
 
 // ---------------------------------------------------------------------

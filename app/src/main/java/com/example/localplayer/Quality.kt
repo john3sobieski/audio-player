@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.compose.ui.graphics.Color
 import java.io.InputStream
+import androidx.annotation.StringRes
 import java.util.Locale
 import kotlin.math.abs
 
@@ -44,13 +45,13 @@ private fun formatKhz(hz: Int): String =
  * «Редкость» качества, как в играх: чем лучше звук, тем реже и ярче цвет.
  * Градиент рисуется слева направо от [from] к [to], [fg] — цвет текста на плашке.
  */
-enum class QualityTier(val title: String, val from: Color, val to: Color, val fg: Color) {
-    COMMON("Обычное", Color(0xFF9BDCFB), Color(0xFF4FC3F7), Color(0xFF04283A)),          // светло-голубой
-    UNCOMMON("Необычное", Color(0xFFA5E08A), Color(0xFF4CAF50), Color(0xFF0B2A0D)),      // зелёный
-    RARE("Редкое", Color(0xFF4C8DFF), Color(0xFF2962FF), Color.White),                   // синий
-    EPIC("Эпическое", Color(0xFFB05CFF), Color(0xFF7B1FA2), Color.White),                // фиолетовый
-    MYTHIC("Мифическое", Color(0xFFFF5252), Color(0xFFC62828), Color.White),             // красный
-    LEGENDARY("Легендарное", Color(0xFFFFE082), Color(0xFFFFA000), Color(0xFF3A2400)),   // золотой
+enum class QualityTier(@StringRes val title: Int, val from: Color, val to: Color, val fg: Color) {
+    COMMON(R.string.tier_common, Color(0xFF9BDCFB), Color(0xFF4FC3F7), Color(0xFF04283A)),          // светло-голубой
+    UNCOMMON(R.string.tier_uncommon, Color(0xFFA5E08A), Color(0xFF4CAF50), Color(0xFF0B2A0D)),      // зелёный
+    RARE(R.string.tier_rare, Color(0xFF4C8DFF), Color(0xFF2962FF), Color.White),                   // синий
+    EPIC(R.string.tier_epic, Color(0xFFB05CFF), Color(0xFF7B1FA2), Color.White),                // фиолетовый
+    MYTHIC(R.string.tier_mythic, Color(0xFFFF5252), Color(0xFFC62828), Color.White),             // красный
+    LEGENDARY(R.string.tier_legendary, Color(0xFFFFE082), Color(0xFFFFA000), Color(0xFF3A2400)),   // золотой
 }
 
 /**

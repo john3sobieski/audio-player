@@ -21,4 +21,5 @@ fun Track.matches(q: String) = matchesQuery(
 
 fun Album.matches(q: String) = matchesQuery(q, name.takeUnless { it == NO_ALBUM }.orEmpty(), artist.takeUnless { it == NO_ARTIST }.orEmpty())
 
-fun Playlist.matches(q: String) = matchesQuery(q, name)
+/** [label] — название так, как оно показано на экране (у «Понравившихся» оно зависит от языка). */
+fun Playlist.matches(q: String, label: String = name) = matchesQuery(q, label)

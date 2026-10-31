@@ -19,6 +19,9 @@ object TrackDetails {
 
     suspend fun load(ctx: Context, t: Track, channels: Int): List<Section> = withContext(Dispatchers.IO) {
         val uri = Uri.parse(t.uri)
+        // Подписи берутся из ресурсов контекста, поэтому уже на выбранном языке; числа форматируются по языку интерфейса
+        val ui = Locale.forLanguageTag(ctx.getString(R.string.ui_lang_tag))
+        fun s(id: Int, vararg args: Any): String = ctx.getString(id, *args)
         val r = MediaMetadataRetriever()
         val tags = ArrayList<Pair<String, String>>()
         val file = ArrayList<Pair<String, String>>()
@@ -30,25 +33,25 @@ object TrackDetails {
             runCatching { r.setDataSource(ctx, uri) }
             fun m(k: Int): String? = runCatching { r.extractMetadata(k)?.trim()?.takeIf { it.isNotEmpty() } }.getOrNull()
 
-            tags += "Название" to t.title
-            if (t.artist != NO_ARTIST) tags += "Исполнитель" to t.artist
-            if (t.albumArtist != NO_ARTIST && t.albumArtist != t.artist) tags += "Исполнитель альбома" to t.albumArtist
-            if (t.album != NO_ALBUM) tags += "Альбом" to t.album
+            tags += s(R.string.ti_title) to t.title
+            if (t.artist != NO_ARTIST) tags += s(R.string.ti_artist) to t.artist
+            if (t.albumArtist != NO_ARTIST && t.albumArtist != t.artist) tags += s(R.string.ti_album_artist) to t.albumArtist
+            if (t.album != NO_ALBUM) tags += s(R.string.ti_album) to t.album
             if (t.trackNo > 0) {
                 val total = m(MediaMetadataRetriever.METADATA_KEY_NUM_TRACKS)?.toIntOrNull()
-                tags += "Номер трека" to if (total != null && total > 0) "${t.trackNo} из $total" else "${t.trackNo}"
+                tags += s(R.string.ti_track_no) to if (total != null && total > 0) s(R.string.ti_track_of, t.trackNo, total) else "${t.trackNo}"
             }
-            m(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)?.let { tags += "Диск" to it }
-            m(MediaMetadataRetriever.METADATA_KEY_GENRE)?.let { tags += "Жанр" to it }
+            m(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)?.let { tags += s(R.string.ti_disc) to it }
+            m(MediaMetadataRetriever.METADATA_KEY_GENRE)?.let { tags += s(R.string.ti_genre) to it }
             (m(MediaMetadataRetriever.METADATA_KEY_YEAR) ?: m(MediaMetadataRetriever.METADATA_KEY_DATE))
-                ?.let { tags += "Год" to it }
-            m(MediaMetadataRetriever.METADATA_KEY_COMPOSER)?.let { tags += "Композитор" to it }
-            m(MediaMetadataRetriever.METADATA_KEY_WRITER)?.let { tags += "Автор текста" to it }
+                ?.let { tags += s(R.string.ti_year) to it }
+            m(MediaMetadataRetriever.METADATA_KEY_COMPOSER)?.let { tags += s(R.string.ti_composer) to it }
+            m(MediaMetadataRetriever.METADATA_KEY_WRITER)?.let { tags += s(R.string.ti_lyricist) to it }
             val author = m(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
             if (author != null && author != t.artist && author != m(MediaMetadataRetriever.METADATA_KEY_WRITER)) {
-                tags += "Автор" to author
+                tags += s(R.string.ti_author) to author
             }
-            m(MediaMetadataRetriever.METADATA_KEY_COMPILATION)?.let { tags += "Сборник" to it }
+            m(MediaMetadataRetriever.METADATA_KEY_COMPILATION)?.let { tags += s(R.string.ti_compilation) to it }
 
             mime = m(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
             if (Build.VERSION.SDK_INT >= 31) {
@@ -56,10 +59,10 @@ object TrackDetails {
                 bitsFallback = m(MediaMetadataRetriever.METADATA_KEY_BITS_PER_SAMPLE)?.toIntOrNull() ?: 0
             }
             val pic = runCatching { r.embeddedPicture }.getOrNull()
-            coverSize = if (pic == null) "нет" else {
+            coverSize = if (pic == null) s(R.string.ti_none) else {
                 val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(pic, 0, pic.size, o)
-                if (o.outWidth > 0) "${o.outWidth}×${o.outHeight}" else "есть"
+                if (o.outWidth > 0) "${o.outWidth}×${o.outHeight}" else s(R.string.ti_present)
             }
         } finally {
             runCatching { r.release() }
@@ -78,34 +81,34 @@ object TrackDetails {
         }
 
         val info = t.info
-        if (info.format.isNotEmpty()) file += "Формат" to info.format
+        if (info.format.isNotEmpty()) file += s(R.string.ti_format) to info.format
         if (info.bitrateKbps > 0) {
-            file += "Битрейт" to "${info.bitrateKbps} кбит/с"
+            file += s(R.string.ti_bitrate) to s(R.string.fmt_kbps, "${info.bitrateKbps}")
         } else if (info.lossless && size > 0 && t.durationMs > 0) {
-            file += "Средний битрейт" to "≈ ${size * 8 / t.durationMs} кбит/с"
+            file += s(R.string.ti_avg_bitrate) to "≈ " + s(R.string.fmt_kbps, "${size * 8 / t.durationMs}")
         }
-        (info.sampleRateHz.takeIf { it > 0 } ?: rateFallback.takeIf { it > 0 })?.let { file += "Частота дискретизации" to khz(it) }
-        (info.bitsPerSample.takeIf { it > 0 } ?: bitsFallback.takeIf { it > 0 })?.let { file += "Разрядность" to "$it бит" }
+        (info.sampleRateHz.takeIf { it > 0 } ?: rateFallback.takeIf { it > 0 })?.let { file += s(R.string.ti_sample_rate) to khz(ctx, ui, it) }
+        (info.bitsPerSample.takeIf { it > 0 } ?: bitsFallback.takeIf { it > 0 })?.let { file += s(R.string.ti_bit_depth) to s(R.string.fmt_bits, it) }
         if (channels > 0) {
-            file += "Каналы" to when (channels) {
-                1 -> "Моно"
-                2 -> "Стерео"
+            file += s(R.string.ti_channels) to when (channels) {
+                1 -> s(R.string.mono)
+                2 -> s(R.string.ti_stereo)
                 else -> "$channels"
             }
         }
-        if (t.durationMs > 0) file += "Длительность" to duration(t.durationMs)
-        mime?.let { file += "MIME-тип" to it }
-        if (size > 0) file += "Размер файла" to fileSize(size)
-        name?.takeIf { it.isNotBlank() }?.let { file += "Имя файла" to it }
-        coverSize?.let { file += "Обложка" to it }
-        if (t.modified > 0) file += "Дата файла" to date(t.modified)
-        if (t.added > 0) file += "Добавлен в плеер" to date(t.added)
+        if (t.durationMs > 0) file += s(R.string.ti_duration) to duration(t.durationMs)
+        mime?.let { file += s(R.string.ti_mime) to it }
+        if (size > 0) file += s(R.string.ti_file_size) to fileSize(ctx, ui, size)
+        name?.takeIf { it.isNotBlank() }?.let { file += s(R.string.ti_file_name) to it }
+        coverSize?.let { file += s(R.string.ti_cover) to it }
+        if (t.modified > 0) file += s(R.string.ti_file_date) to date(ui, t.modified)
+        if (t.added > 0) file += s(R.string.ti_added) to date(ui, t.added)
 
-        listOf(Section("Теги", tags), Section("Файл", file)).filter { it.rows.isNotEmpty() }
+        listOf(Section(s(R.string.ti_section_tags), tags), Section(s(R.string.ti_section_file), file)).filter { it.rows.isNotEmpty() }
     }
 
-    private fun khz(hz: Int): String =
-        if (hz % 1000 == 0) "${hz / 1000} кГц" else String.format(Locale("ru"), "%.1f кГц", hz / 1000.0)
+    private fun khz(ctx: Context, ui: Locale, hz: Int): String =
+        ctx.getString(R.string.fmt_khz, if (hz % 1000 == 0) "${hz / 1000}" else String.format(ui, "%.1f", hz / 1000.0))
 
     private fun duration(ms: Long): String {
         val s = ms / 1000
@@ -115,10 +118,11 @@ object TrackDetails {
         return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, sec) else String.format(Locale.US, "%d:%02d", m, sec)
     }
 
-    private fun fileSize(bytes: Long): String {
+    private fun fileSize(ctx: Context, ui: Locale, bytes: Long): String {
         val mb = bytes / 1024.0 / 1024.0
-        return if (mb >= 1) String.format(Locale("ru"), "%.2f МБ", mb) else String.format(Locale("ru"), "%.0f КБ", bytes / 1024.0)
+        return if (mb >= 1) ctx.getString(R.string.fmt_mb, String.format(ui, "%.2f", mb))
+        else ctx.getString(R.string.fmt_kb, String.format(ui, "%.0f", bytes / 1024.0))
     }
 
-    private fun date(ms: Long): String = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(ms))
+    private fun date(ui: Locale, ms: Long): String = SimpleDateFormat("dd.MM.yyyy HH:mm", ui).format(Date(ms))
 }

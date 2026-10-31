@@ -1,6 +1,7 @@
 package com.example.localplayer
 
 import android.Manifest
+import android.content.Context
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
@@ -28,6 +29,11 @@ import androidx.compose.ui.platform.LocalContext
 class MainActivity : ComponentActivity() {
 
     private val vm: PlayerViewModel by viewModels()
+
+    /** Подставляет выбранный в настройках язык: все `stringResource` и `plurals` берут перевод из этих ресурсов. */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLocale.wrap(newBase))
+    }
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* не критично */ }

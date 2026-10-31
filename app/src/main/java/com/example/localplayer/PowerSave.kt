@@ -1,6 +1,7 @@
 package com.example.localplayer
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FiniteAnimationSpec
@@ -15,27 +16,10 @@ import androidx.compose.runtime.mutableStateOf
 import java.util.concurrent.CopyOnWriteArrayList
 
 /** Режим энергоэффективности. По умолчанию — [OFF]: всё работает как обычно. */
-enum class PowerMode(val label: String, val description: String) {
-    OFF(
-        "Отключено",
-        "Всё работает по стандарту",
-    ),
-    MEDIUM(
-        "Средний",
-        "Почти без анимаций (остаётся только то, что подтверждает действие), индикаторы и текст песни " +
-            "обновляются реже, экран не удерживается включённым",
-    ),
-    INTENSIVE(
-        "Интенсивный",
-        "Всё из среднего, а также:\n" +
-            "• всегда тёмная тема\n" +
-            "• громкость плеера не выше 40%\n" +
-            "• только моно\n" +
-            "• скорость, эквалайзер, басы, требл, subsonic и нормализация заблокированы\n" +
-            "• звук только через провод или динамик телефона, без Bluetooth\n" +
-            "• папка сканируется только по кнопке\n" +
-            "• меньше кэша обложек и заранее собранных страниц",
-    ),
+enum class PowerMode(@StringRes val label: Int, @StringRes val description: Int) {
+    OFF(R.string.power_off, R.string.power_off_desc),
+    MEDIUM(R.string.power_medium, R.string.power_medium_desc),
+    INTENSIVE(R.string.power_intensive, R.string.power_intensive_desc),
 }
 
 /**

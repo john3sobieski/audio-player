@@ -1,5 +1,7 @@
 package com.example.localplayer
 
+import androidx.annotation.StringRes
+
 data class Track(
     val uri: String,
     val title: String,
@@ -39,40 +41,43 @@ data class Playlist(
 
 /** Плейлист по умолчанию: его нельзя удалить или переименовать, он всегда закреплён вверху списка. */
 const val FAVORITES_ID = "favorites"
+/** Имя, под которым плейлист хранится в файле. На экране показывается перевод `R.string.favorites_name`, а не это значение. */
 const val FAVORITES_NAME = "Понравившиеся треки"
 
 /** Количество очередей: всегда ровно четыре, их нельзя ни создать, ни удалить. */
 const val QUEUE_COUNT = 4
 
-/** Очередь прослушивания. Всего их [QUEUE_COUNT]; у каждой фиксированный номер [id] (0..3) и имя «Очередь N». */
+/** Очередь прослушивания. Всего их [QUEUE_COUNT]; у каждой фиксированный номер [id] (0..3), имя «Очередь N» берётся из ресурсов. */
 data class PlayQueue(
     val id: Int,
     val trackUris: List<String>,
-) {
-    val name: String get() = "Очередь ${id + 1}"
-}
+)
 
 /** Тема оформления. По умолчанию — [SYSTEM]: следует за настройкой телефона. */
-enum class ThemeMode(val label: String, val description: String) {
-    LIGHT("Ясный", "Светлое оформление"),
-    DARK("Тёмный", "Чисто чёрный фон, экономит заряд на OLED-экранах"),
-    SYSTEM("Системная", "Как на телефоне: тёмная, если на телефоне включена тёмная тема"),
+enum class ThemeMode(@StringRes val label: Int, @StringRes val description: Int) {
+    LIGHT(R.string.theme_light, R.string.theme_light_desc),
+    DARK(R.string.theme_dark, R.string.theme_dark_desc),
+    SYSTEM(R.string.theme_system, R.string.theme_system_desc),
 }
 
+/**
+ * Служебные значения «нет альбома» / «нет исполнителя»: хранятся в кэше библиотеки и в ключах альбомов, поэтому не меняются
+ * с языком. На экране вместо них показываются `R.string.no_album` и `R.string.unknown_artist`.
+ */
 const val NO_ALBUM = "Без альбома"
 const val NO_ARTIST = "Неизвестный исполнитель"
 
 /** Способы сортировки списков. [MANUAL] — порядок, который пользователь задал перетаскиванием. */
-enum class SortKey(val label: String) {
-    MANUAL("Вручную"),
-    NAME("По названию"),
-    ARTIST("По исполнителю"),
-    ALBUM("По альбому"),
-    DURATION("По длительности"),
-    COUNT("По числу треков"),
-    FILE_DATE("По дате файла"),
-    CREATED("По дате создания"),
-    UPDATED("По дате изменения"),
+enum class SortKey(@StringRes val label: Int) {
+    MANUAL(R.string.sort_manual),
+    NAME(R.string.sort_name),
+    ARTIST(R.string.sort_artist),
+    ALBUM(R.string.sort_album),
+    DURATION(R.string.sort_duration),
+    COUNT(R.string.sort_count),
+    FILE_DATE(R.string.sort_file_date),
+    CREATED(R.string.sort_created),
+    UPDATED(R.string.sort_updated),
 }
 
 data class SortState(val key: SortKey, val descending: Boolean = false)

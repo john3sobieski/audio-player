@@ -703,13 +703,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Воспроизведение ----------
 
-    private fun Track.toItem() = MediaItem.Builder()
-        .setMediaId(uri)
-        .setUri(Uri.parse(uri))
-        .setMediaMetadata(
-            MediaMetadata.Builder().setTitle(title).setArtist(artist).setAlbumTitle(album).build(),
-        )
-        .build()
+    /** В уведомлении и на экране блокировки «нет исполнителя/альбома» показываются на выбранном языке приложения. */
+    private fun Track.toItem(): MediaItem {
+        val app = getApplication<Application>()
+        val shownArtist = if (artist == NO_ARTIST) AppLocale.string(app, R.string.unknown_artist) else artist
+        val shownAlbum = if (album == NO_ALBUM) AppLocale.string(app, R.string.no_album) else album
+        return MediaItem.Builder()
+            .setMediaId(uri)
+            .setUri(Uri.parse(uri))
+            .setMediaMetadata(
+                MediaMetadata.Builder().setTitle(title).setArtist(shownArtist).setAlbumTitle(shownAlbum).build(),
+            )
+            .build()
+    }
 
     /**
      * Откуда сейчас играет очередь: ключ экрана альбома/плейлиста (например, `album:…`, `playlist:…`) или null,

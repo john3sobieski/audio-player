@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -117,10 +118,10 @@ internal fun LyricsScreen(vm: PlayerViewModel, miniPlayer: @Composable () -> Uni
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(56.dp).padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                 }
                 Text(
-                    "Текст песни",
+                    stringResource(R.string.lyrics_title),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = 8.dp),
                 )
@@ -133,7 +134,7 @@ internal fun LyricsScreen(vm: PlayerViewModel, miniPlayer: @Composable () -> Uni
                         }
                         is LyricsResult.None -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                             Text(
-                                "Текст для выбранной песни отсутствует",
+                                stringResource(R.string.lyrics_none),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,

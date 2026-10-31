@@ -70,7 +70,9 @@ object AudioFx {
     fun speedLabelValue(t: Float): Float = if (t >= 0f) 1f + t else t - 1f
 
     val BAND_FREQS = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 3500f, 6000f, 9000f, 12500f, 16000f)
-    val BAND_LABELS = listOf("32", "64", "125", "250", "500", "1к", "2к", "3,5к", "6к", "9к", "12к", "16к")
+    /** Подписи полос без единицы измерения; начиная с [BAND_KHZ_FROM] это килогерцы (к ним добавляется `R.string.eq_khz_suffix`). */
+    val BAND_LABELS = listOf("32", "64", "125", "250", "500", "1", "2", "3.5", "6", "9", "12", "16")
+    const val BAND_KHZ_FROM = 5
 
     /** Добротность каждой полосы подбирается по расстоянию до соседей, чтобы полосы перекрывались ровно. */
     val BAND_Q = DoubleArray(BANDS) { i ->

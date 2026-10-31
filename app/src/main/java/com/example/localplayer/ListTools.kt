@@ -13,6 +13,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -308,7 +309,7 @@ fun SortBar(
                         label = "sortLabel",
                     ) { key ->
                         Text(
-                            key.label,
+                            stringResource(key.label),
                             style = MaterialTheme.typography.labelLarge,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -319,7 +320,7 @@ fun SortBar(
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     options.forEach { key ->
                         DropdownMenuItem(
-                            text = { Text(key.label) },
+                            text = { Text(stringResource(key.label)) },
                             leadingIcon = {
                                 if (key == sort.key) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                                 else Spacer(Modifier.size(24.dp))
@@ -347,7 +348,7 @@ fun SortBar(
                     label = "sortDirection",
                 ) { desc ->
                     Text(
-                        if (desc) "По убыванию" else "По возрастанию",
+                        stringResource(if (desc) R.string.sort_descending else R.string.sort_ascending),
                         style = MaterialTheme.typography.labelLarge,
                         maxLines = 1,
                     )

@@ -4,7 +4,7 @@ A simple, native Android music player for your **local audio files**. It plays m
 
 No ads, no accounts, no internet access required. Everything stays on your device.
 
-> **Note:** the app interface is currently in Russian only.
+> **Languages:** English, German, Russian, Ukrainian, Chinese, Japanese, French, Czech, Spanish and Polish. Choose one under **Settings → App language**, or leave it on *System* to follow the phone (English is used if the phone language isn't supported).
 
 ## Features
 
@@ -18,6 +18,7 @@ No ads, no accounts, no internet access required. Everything stays on your devic
 - **Lyrics:** a button under the "i" in the player opens the lyrics. Radiant looks for lyrics in the file tags (ID3 USLT/SYLT, Vorbis `LYRICS`, M4A `©lyr`) and in `.lrc` / `.txt` files with the same name next to the track, and checks again every time you open the app. Synced (`.lrc`) lyrics scroll along with the song, highlight the current line and fade the lines already sung; tap a line to jump to it. Plain lyrics are shown in a compact view.
 - **Playback speed** from 3× slower to 3× faster in 0.1 steps, with pitch preserved.
 - **Sound settings:** mono/stereo, volume normalization, bass and treble boost, subsonic filter, and a 12-band equalizer with 10 presets. The equalizer can apply one curve to all tracks or remember a separate curve for each track.
+- **Interface language:** *Settings → App language* opens a window with *System* pinned on top and the ten languages below it in alphabetical order. The change applies at once, without interrupting playback.
 - **Themes:** light, true-black dark (great for OLED screens) or system default, with dynamic colors on Android 12+.
 - **Power saving** (Settings): *Off*, *Medium* (almost no animations, rarer progress updates) or *Intensive* (also forced black theme, volume capped at 40%, mono only, EQ/bass/treble/subsonic/normalization bypassed, wired or phone-speaker output only with no Bluetooth, manual folder scan, smaller cover cache).
 - **Track details:** tags, format, bitrate, sample rate, channels, file size and more.
@@ -39,10 +40,10 @@ New versions install over old ones without uninstalling, so your playlists and s
 
 ## Getting started
 
-1. Open the app and tap **Выбрать папку** (*Choose folder*).
+1. Open the app and tap **Choose folder**.
 2. Select the folder with your music. The library fills automatically.
-3. Browse **Плейлисты** (*Playlists*), **Альбомы** (*Albums*) and **Треки** (*Tracks*) and tap a track to play it.
-4. To build a playlist, tap **⋮** next to any track and choose **Добавить в плейлист** (*Add to playlist*).
+3. Browse **Playlists**, **Albums** and **Tracks** and tap a track to play it.
+4. To build a playlist, tap **⋮** next to any track and choose **Add to playlist**.
 
 ## Building from source
 
