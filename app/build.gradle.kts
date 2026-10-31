@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.localplayer"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.localplayer"
@@ -45,9 +45,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
     }
@@ -66,4 +63,9 @@ dependencies {
     val media3 = "1.5.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-session:$media3")
+}
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
