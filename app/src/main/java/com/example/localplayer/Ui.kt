@@ -1548,7 +1548,7 @@ private fun QualityBadge(info: AudioInfo?) {
 /**
  * Быстрые настройки звука прямо в плеере: ряд кнопок «Bass», «Treble», «Subsonic», «EQ», «Speed».
  * Нажатие на «Bass», «Treble», «Subsonic» и «Speed» открывает окно с тем же переключателем и ползунком, что и в настройках;
- * «EQ» открывает эквалайзер. Включённые эффекты подсвечены.
+ * «EQ» открывает эквалайзер. Включённые эффекты подсвечены акцентным цветом.
  */
 @Composable
 private fun SoundPanel(vm: PlayerViewModel) {
@@ -1582,33 +1582,34 @@ private fun SoundPanel(vm: PlayerViewModel) {
 }
 
 /**
- * Плитка быстрой настройки звука: значок сверху, подпись снизу, скруглённый квадрат вместо вытянутой «таблетки».
- * Включённый эффект заливается цветом темы, выключенный — спокойная серая плитка без рамки.
+ * Кнопка быстрой настройки звука в минималистичном стиле: без фона и рамки, только значок и подпись.
+ * Выключенная приглушена, включённая окрашена в акцентный цвет темы и получает маленькую точку снизу.
  */
 @Composable
 private fun SoundButton(label: String, icon: ImageVector, active: Boolean, modifier: Modifier, locked: Boolean = false, onClick: () -> Unit) {
-    val bg by animateColorAsState(
-        if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        mtween(220), label = "soundTileBg",
-    )
+    val cs = MaterialTheme.colorScheme
     val fg by animateColorAsState(
-        if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        if (active) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.6f),
         mtween(220), label = "soundTileFg",
+    )
+    val dot by animateColorAsState(
+        if (active) cs.primary else Color.Transparent,
+        mtween(220), label = "soundTileDot",
     )
     val source = remember { MutableInteractionSource() }
     Column(
         modifier
-            .pressScale(source, pressedScale = 0.94f)
+            .pressScale(source, pressedScale = 0.92f)
             .graphicsLayer { alpha = if (locked) 0.38f else 1f }
-            .clip(RoundedCornerShape(18.dp))
-            .background(bg)
             .clickable(interactionSource = source, indication = null, enabled = !locked, onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(26.dp))
-        Spacer(Modifier.height(6.dp))
-        Text(label, color = fg, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = fg, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        Spacer(Modifier.height(5.dp))
+        Box(Modifier.size(4.dp).background(dot, CircleShape))
     }
 }
 
